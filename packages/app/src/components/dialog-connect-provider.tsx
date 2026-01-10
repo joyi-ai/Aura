@@ -1,5 +1,6 @@
 import type { ProviderAuthAuthorization } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
+import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -11,21 +12,47 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { iife } from "@opencode-ai/util/iife"
-import { createMemo, Match, onCleanup, onMount, Switch } from "solid-js"
+import { createMemo, createResource, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
+import { useProviders } from "@/hooks/use-providers"
 import { DialogSelectModel } from "./dialog-select-model"
 import { DialogSelectProvider } from "./dialog-select-provider"
+
+type RoutingSettings = {
+  order?: string[]
+  allow_fallbacks?: boolean
+  require_parameters?: boolean
+  data_collection?: "allow" | "deny"
+  only?: string[]
+}
 
 export function DialogConnectProvider(props: { provider: string }) {
   const dialog = useDialog()
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
+  const providers = useProviders()
   const provider = createMemo(() => globalSync.data.provider.all.find((x) => x.id === props.provider)!)
+  const iconId = createMemo(() => (props.provider === "codex" ? "openai" : props.provider))
+  const isConnected = createMemo(() => providers.connected().some((p) => p.id === props.provider))
+  const supportsRouting = createMemo(() => props.provider === "openrouter" || props.provider === "vercel")
+  
+  // Fetch existing routing settings for this provider
+  const [routingSettings, { refetch: refetchRouting }] = createResource(
+    () => (supportsRouting() ? props.provider : null),
+    async (providerId) => {
+      if (!providerId) return null
+      const response = await fetch(`${globalSDK.url}/provider/${providerId}/routing`)
+      if (!response.ok) return null
+      const data = await response.json()
+      return data as RoutingSettings | null
+    },
+  )
+
   const methods = createMemo(
     () =>
       globalSync.data.provider_auth[props.provider] ?? [
@@ -35,6 +62,18 @@ export function DialogConnectProvider(props: { provider: string }) {
         },
       ],
   )
+
+  // Fetch existing auth info for this provider
+  const [existingAuth] = createResource(
+    () => props.provider,
+    async (providerId) => {
+      const response = await fetch(`${globalSDK.url}/auth/${providerId}`)
+      if (!response.ok) return null
+      const data = await response.json()
+      return data as { type: string } | null
+    },
+  )
+
   const [store, setStore] = createStore({
     methodIndex: undefined as undefined | number,
     authorization: undefined as undefined | ProviderAuthAuthorization,
@@ -96,6 +135,18 @@ export function DialogConnectProvider(props: { provider: string }) {
     listRef?.onKeyDown(e)
   }
 
+  function normalizeOauthCode(input: string) {
+    const trimmed = input.trim()
+    if (!trimmed) return undefined
+    const codeMatch = trimmed.match(/(?:^|[?&#])code=([^&#]+)/i)
+    const stateMatch = trimmed.match(/(?:^|[?&#])state=([^&#]+)/i)
+    const code = codeMatch?.[1]
+    const state = stateMatch?.[1]
+    if (code && state) return `${code}#${state}`
+    if (code) return code
+    return trimmed
+  }
+
   onMount(() => {
     if (methods().length === 1) {
       selectMethod(0)
@@ -136,9 +187,9 @@ export function DialogConnectProvider(props: { provider: string }) {
 
   return (
     <Dialog title={<IconButton tabIndex={-1} icon="arrow-left" variant="ghost" onClick={goBack} />}>
-      <div class="flex flex-col gap-6 px-2.5 pb-3">
-        <div class="px-2.5 flex gap-4 items-center">
-          <ProviderIcon id={props.provider as IconName} class="size-5 shrink-0 icon-strong-base" />
+        <div class="flex flex-col gap-6 px-2.5 pb-3">
+          <div class="px-2.5 flex gap-4 items-center">
+          <ProviderIcon id={iconId() as IconName} class="size-5 shrink-0 icon-strong-base" />
           <div class="text-16-medium text-text-strong">
             <Switch>
               <Match when={props.provider === "anthropic" && method()?.label?.toLowerCase().includes("max")}>
@@ -198,6 +249,8 @@ export function DialogConnectProvider(props: { provider: string }) {
                   error: undefined as string | undefined,
                 })
 
+                const hasExistingKey = createMemo(() => existingAuth()?.type === "api")
+
                 async function handleSubmit(e: SubmitEvent) {
                   e.preventDefault()
 
@@ -242,6 +295,11 @@ export function DialogConnectProvider(props: { provider: string }) {
                           </div>
                         </div>
                       </Match>
+                      <Match when={hasExistingKey()}>
+                        <div class="text-14-regular text-text-base">
+                          {provider().name} is already connected. You can update your API key below or keep using the existing one.
+                        </div>
+                      </Match>
                       <Match when={true}>
                         <div class="text-14-regular text-text-base">
                           Enter your {provider().name} API key to connect your account and use {provider().name} models
@@ -250,21 +308,223 @@ export function DialogConnectProvider(props: { provider: string }) {
                       </Match>
                     </Switch>
                     <form onSubmit={handleSubmit} class="flex flex-col items-start gap-4">
-                      <TextField
-                        autofocus
-                        type="text"
-                        label={`${provider().name} API key`}
-                        placeholder="API key"
-                        name="apiKey"
-                        value={formStore.value}
-                        onChange={setFormStore.bind(null, "value")}
-                        validationState={formStore.error ? "invalid" : undefined}
-                        error={formStore.error}
-                      />
-                      <Button class="w-auto" type="submit" size="large" variant="primary">
-                        Submit
-                      </Button>
+                      <div class="w-full flex items-end gap-2">
+                        <TextField
+                          autofocus={!hasExistingKey()}
+                          type="text"
+                          label={`${provider().name} API key`}
+                          placeholder={hasExistingKey() ? "Enter new API key to replace" : "API key"}
+                          name="apiKey"
+                          value={formStore.value}
+                          onChange={(v) => setFormStore("value", v)}
+                          validationState={formStore.error ? "invalid" : undefined}
+                          error={formStore.error}
+                          class="flex-1"
+                        />
+                      </div>
+                      <div class="flex items-center gap-3">
+                        <Button class="w-auto" type="submit" size="large" variant="primary" disabled={!!(hasExistingKey() && !formStore.value)}>
+                          {hasExistingKey() ? "Update" : "Submit"}
+                        </Button>
+                        <Show when={hasExistingKey() && !formStore.value}>
+                          <Button class="w-auto" type="button" size="large" variant="ghost" onClick={() => dialog.close()}>
+                            Keep existing
+                          </Button>
+                        </Show>
+                      </div>
                     </form>
+
+                    {/* Provider Routing Settings */}
+                    <Show when={supportsRouting() && isConnected()}>
+                      {iife(() => {
+                        const [routingProviders] = createResource(async () => {
+                          const res = await fetch(`${globalSDK.url}/provider/routing/providers`)
+                          return res.json() as Promise<{ openrouter: string[]; vercel: string[] }>
+                        })
+
+                        const availableProviders = () => {
+                          const data = routingProviders()
+                          if (!data) return []
+                          return props.provider === "openrouter" ? data.openrouter : data.vercel
+                        }
+
+                        const [routingStore, setRoutingStore] = createStore<{
+                          order: string[]
+                          allow_fallbacks: boolean
+                          data_collection: "allow" | "deny"
+                          only: string[]
+                          dirty: boolean
+                          saving: boolean
+                        }>({
+                          order: routingSettings()?.order ?? [],
+                          allow_fallbacks: routingSettings()?.allow_fallbacks ?? true,
+                          data_collection: routingSettings()?.data_collection ?? "allow",
+                          only: routingSettings()?.only ?? [],
+                          dirty: false,
+                          saving: false,
+                        })
+
+                        const addProvider = (name: string) => {
+                          if (routingStore.order.includes(name)) return
+                          setRoutingStore("order", [...routingStore.order, name])
+                          setRoutingStore("dirty", true)
+                        }
+
+                        const removeProvider = (name: string) => {
+                          setRoutingStore(
+                            "order",
+                            routingStore.order.filter((p) => p !== name),
+                          )
+                          setRoutingStore("dirty", true)
+                        }
+
+                        const moveProvider = (index: number, direction: -1 | 1) => {
+                          const newOrder = [...routingStore.order]
+                          const newIndex = index + direction
+                          if (newIndex < 0 || newIndex >= newOrder.length) return
+                          ;[newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]]
+                          setRoutingStore("order", newOrder)
+                          setRoutingStore("dirty", true)
+                        }
+
+                        const saveRouting = async () => {
+                          setRoutingStore("saving", true)
+                          try {
+                            await fetch(`${globalSDK.url}/provider/${props.provider}/routing`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                order: routingStore.order.length > 0 ? routingStore.order : undefined,
+                                allow_fallbacks: routingStore.allow_fallbacks,
+                                data_collection: routingStore.data_collection,
+                                only: routingStore.only.length > 0 ? routingStore.only : undefined,
+                              }),
+                            })
+                            setRoutingStore("dirty", false)
+                            showToast({
+                              variant: "success",
+                              title: "Routing settings saved",
+                            })
+                            refetchRouting()
+                          } catch {
+                            showToast({
+                              variant: "error",
+                              title: "Failed to save routing settings",
+                            })
+                          } finally {
+                            setRoutingStore("saving", false)
+                          }
+                        }
+
+                        return (
+                          <div class="border-t border-border-base pt-6 flex flex-col gap-4">
+                            <div class="text-14-medium text-text-strong">Provider Routing</div>
+                            <div class="text-13-regular text-text-weak">
+                              Configure which upstream providers to use and in what order.
+                            </div>
+
+                            {/* Provider Order */}
+                            <div class="flex flex-col gap-2">
+                              <div class="text-13-medium text-text-base">Provider Order</div>
+                              <Show
+                                when={routingStore.order.length > 0}
+                                fallback={
+                                  <div class="text-12-regular text-text-weak py-2">
+                                    No provider order set. Using default routing.
+                                  </div>
+                                }
+                              >
+                                <div class="flex flex-col gap-1">
+                                  <For each={routingStore.order}>
+                                    {(name, index) => (
+                                      <div class="flex items-center gap-2 py-1.5 px-2 rounded bg-surface-raised-base">
+                                        <span class="text-13-regular text-text-base flex-1">{name}</span>
+                                        <button
+                                          type="button"
+                                          class="p-1 rounded hover:bg-surface-raised-base-hover disabled:opacity-30"
+                                          disabled={index() === 0}
+                                          onClick={() => moveProvider(index(), -1)}
+                                        >
+                                          <Icon name="chevron-down" size="small" class="rotate-180" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="p-1 rounded hover:bg-surface-raised-base-hover disabled:opacity-30"
+                                          disabled={index() === routingStore.order.length - 1}
+                                          onClick={() => moveProvider(index(), 1)}
+                                        >
+                                          <Icon name="chevron-down" size="small" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="p-1 rounded hover:bg-surface-raised-base-hover"
+                                          onClick={() => removeProvider(name)}
+                                        >
+                                          <Icon name="close" size="small" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+
+                              {/* Add provider dropdown */}
+                              <div class="flex flex-wrap gap-1 pt-1">
+                                <For
+                                  each={availableProviders().filter((p) => !routingStore.order.includes(p))}
+                                >
+                                  {(name) => (
+                                    <button
+                                      type="button"
+                                      class="px-2 py-1 text-12-regular text-text-weak rounded border border-border-weak-base hover:bg-surface-raised-base-hover hover:text-text-base transition-colors"
+                                      onClick={() => addProvider(name)}
+                                    >
+                                      + {name}
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+
+                            {/* OpenRouter-specific options */}
+                            <Show when={props.provider === "openrouter"}>
+                              <div class="flex flex-col gap-3 pt-2">
+                                <Checkbox
+                                  checked={routingStore.allow_fallbacks}
+                                  onChange={(checked) => {
+                                    setRoutingStore("allow_fallbacks", checked)
+                                    setRoutingStore("dirty", true)
+                                  }}
+                                >
+                                  Allow fallbacks to other providers
+                                </Checkbox>
+                                <Checkbox
+                                  checked={routingStore.data_collection === "deny"}
+                                  onChange={(checked) => {
+                                    setRoutingStore("data_collection", checked ? "deny" : "allow")
+                                    setRoutingStore("dirty", true)
+                                  }}
+                                >
+                                  Deny data collection for training
+                                </Checkbox>
+                              </div>
+                            </Show>
+
+                            <Show when={routingStore.dirty}>
+                              <Button
+                                class="self-start"
+                                variant="primary"
+                                size="small"
+                                onClick={saveRouting}
+                                disabled={routingStore.saving}
+                              >
+                                {routingStore.saving ? "Saving..." : "Save Routing Settings"}
+                              </Button>
+                            </Show>
+                          </div>
+                        )
+                      })}
+                    </Show>
                   </div>
                 )
               })}
@@ -289,9 +549,9 @@ export function DialogConnectProvider(props: { provider: string }) {
 
                       const form = e.currentTarget as HTMLFormElement
                       const formData = new FormData(form)
-                      const code = formData.get("code") as string
+                      const code = normalizeOauthCode(String(formData.get("code") ?? ""))
 
-                      if (!code?.trim()) {
+                      if (!code) {
                         setFormStore("error", "Authorization code is required")
                         return
                       }
@@ -315,6 +575,9 @@ export function DialogConnectProvider(props: { provider: string }) {
                           Visit <Link href={store.authorization!.url}>this link</Link> to collect your authorization
                           code to connect your account and use {provider().name} models in OpenCode.
                         </div>
+                        <Show when={props.provider === "codex" && store.authorization?.url}>
+                          <TextField label="Login link" value={store.authorization!.url} readOnly copyable />
+                        </Show>
                         <form onSubmit={handleSubmit} class="flex flex-col items-start gap-4">
                           <TextField
                             autofocus
@@ -344,6 +607,10 @@ export function DialogConnectProvider(props: { provider: string }) {
                       }
                       return instructions
                     })
+                    const showCode = createMemo(() => props.provider !== "codex" && !!code())
+                    const waitingLabel = createMemo(() =>
+                      props.provider === "codex" ? "Waiting for ChatGPT login..." : "Waiting for authorization...",
+                    )
 
                     onMount(async () => {
                       const result = await globalSDK.client.provider.oauth.callback({
@@ -361,13 +628,26 @@ export function DialogConnectProvider(props: { provider: string }) {
                     return (
                       <div class="flex flex-col gap-6">
                         <div class="text-14-regular text-text-base">
-                          Visit <Link href={store.authorization!.url}>this link</Link> and enter the code below to
-                          connect your account and use {provider().name} models in OpenCode.
+                          <Switch>
+                            <Match when={props.provider === "codex"}>
+                              Visit <Link href={store.authorization!.url}>this link</Link> to sign in with ChatGPT and
+                              return here to finish connecting.
+                            </Match>
+                            <Match when={true}>
+                              Visit <Link href={store.authorization!.url}>this link</Link> and enter the code below to
+                              connect your account and use {provider().name} models in OpenCode.
+                            </Match>
+                          </Switch>
                         </div>
-                        <TextField label="Confirmation code" class="font-mono" value={code()} readOnly copyable />
+                        <Show when={props.provider === "codex"}>
+                          <TextField label="Login link" value={store.authorization!.url} readOnly copyable />
+                        </Show>
+                        <Show when={showCode()}>
+                          <TextField label="Confirmation code" class="font-mono" value={code()} readOnly copyable />
+                        </Show>
                         <div class="text-14-regular text-text-base flex items-center gap-4">
                           <Spinner />
-                          <span>Waiting for authorization...</span>
+                          <span>{waitingLabel()}</span>
                         </div>
                       </div>
                     )

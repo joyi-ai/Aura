@@ -37,6 +37,12 @@ export type Platform = {
 
   /** Fetch override */
   fetch?: typeof fetch
+
+  /** Invoke a Tauri command (Tauri only) */
+  invoke?<T>(cmd: string, args?: Record<string, unknown>): Promise<T>
+
+  /** Listen to a Tauri event (Tauri only) */
+  listen?<T>(event: string, handler: (payload: T) => void): Promise<() => void>
 }
 
 export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext({

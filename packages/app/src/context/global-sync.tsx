@@ -22,10 +22,40 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@opencode-ai/util/binary"
 import { retry } from "@opencode-ai/util/retry"
 import { useGlobalSDK } from "./global-sdk"
+import { usePlatform } from "./platform"
 import { ErrorPage, type InitError } from "../pages/error"
 import { batch, createContext, useContext, onCleanup, onMount, type ParentProps, Switch, Match } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
+
+function normalizeDirectory(input: string | undefined) {
+  if (!input) return ""
+  const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!normalized) return ""
+  if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
+  return normalized.toLowerCase()
+}
+
+export type AskUserQuestionRequest = {
+  id: string
+  sessionID: string
+  messageID: string
+  callID: string
+  questions: Array<{
+    question: string
+    header: string
+    options: Array<{ label: string; description: string }>
+    multiSelect: boolean
+  }>
+}
+
+export type PlanModeRequest = {
+  id: string
+  sessionID: string
+  messageID: string
+  callID: string
+  plan: string
+}
 
 type State = {
   status: "loading" | "partial" | "complete"
@@ -48,6 +78,12 @@ type State = {
   permission: {
     [sessionID: string]: PermissionRequest[]
   }
+  askuser: {
+    [sessionID: string]: AskUserQuestionRequest[]
+  }
+  planmode: {
+    [sessionID: string]: PlanModeRequest[]
+  }
   mcp: {
     [name: string]: McpStatus
   }
@@ -64,6 +100,8 @@ type State = {
 
 function createGlobalSync() {
   const globalSDK = useGlobalSDK()
+  const platform = usePlatform()
+  const fetchConfig = platform.fetch ? { fetch: platform.fetch } : {}
   const [globalStore, setGlobalStore] = createStore<{
     ready: boolean
     error?: InitError
@@ -96,6 +134,8 @@ function createGlobalSync() {
         session_diff: {},
         todo: {},
         permission: {},
+        askuser: {},
+        planmode: {},
         mcp: {},
         lsp: [],
         vcs: undefined,
@@ -113,12 +153,30 @@ function createGlobalSync() {
     globalSDK.client.session
       .list({ directory })
       .then((x) => {
+        const root = normalizeDirectory(directory)
+        const fallback = normalizeDirectory(globalStore.path.directory)
+        const projectById = globalStore.project.find((p) => p.id === store.project)
+        const projectByPath = globalStore.project.find((p) => normalizeDirectory(p.worktree) === root)
+        const project = projectById ?? projectByPath
+        const sandboxes = (project?.sandboxes ?? []).map(normalizeDirectory).filter(Boolean)
+        const allowed = new Set([root, ...sandboxes].filter(Boolean))
+        const allow = (input: string | undefined) => {
+          const dir = normalizeDirectory(input)
+          if (dir) return allowed.has(dir)
+          if (!fallback) return false
+          return root === fallback
+        }
         const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000
         const nonArchived = (x.data ?? [])
           .filter((s) => !!s?.id)
           .filter((s) => !s.time?.archived)
           .slice()
           .sort((a, b) => a.id.localeCompare(b.id))
+          .filter((s) => allow(s.directory))
+          .map((session) => {
+            if (session.directory) return session
+            return { ...session, directory }
+          })
         // Include up to the limit, plus any updated in the last 4 hours
         const sessions = nonArchived.filter((s, i) => {
           if (i < store.limit) return true
@@ -141,6 +199,7 @@ function createGlobalSync() {
       baseUrl: globalSDK.url,
       directory,
       throwOnError: true,
+      ...fetchConfig,
     })
 
     const blockingRequests = {
@@ -248,7 +307,9 @@ function createGlobalSync() {
       }
       case "session.updated": {
         const result = Binary.search(store.session, event.properties.info.id, (s) => s.id)
-        if (event.properties.info.time.archived) {
+        const isArchived = !!event.properties.info.time?.archived
+        // If archived, remove from store if present
+        if (isArchived) {
           if (result.found) {
             setStore(
               "session",
@@ -259,16 +320,20 @@ function createGlobalSync() {
           }
           break
         }
+        // If found and not archived, update it
         if (result.found) {
           setStore("session", result.index, reconcile(event.properties.info))
           break
         }
-        setStore(
-          "session",
-          produce((draft) => {
-            draft.splice(result.index, 0, event.properties.info)
-          }),
-        )
+        // Only insert if not archived (defensive check)
+        if (!isArchived) {
+          setStore(
+            "session",
+            produce((draft) => {
+              draft.splice(result.index, 0, event.properties.info)
+            }),
+          )
+        }
         break
       }
       case "session.diff":
@@ -398,9 +463,116 @@ function createGlobalSync() {
           baseUrl: globalSDK.url,
           directory,
           throwOnError: true,
+          ...fetchConfig,
         })
         sdk.lsp.status().then((x) => setStore("lsp", x.data ?? []))
         break
+      }
+    }
+
+    // Handle AskUserQuestion events (not in typed SDK events)
+    const eventType = (event as unknown as { type?: string }).type
+    if (eventType === "codex.app-server.exited") {
+      const props = (event as unknown as { properties?: { message?: string } }).properties
+      const detail =
+        typeof props?.message === "string" && props.message.length > 0 ? props.message : "Codex app-server exited"
+      const project = getFilename(directory)
+      const description = project ? `${project}: ${detail}` : detail
+      showToast({
+        variant: "error",
+        icon: "circle-ban-sign",
+        title: "Codex stopped",
+        description,
+        persistent: true,
+        actions: [
+          {
+            label: "Restart Codex",
+            onClick: () => {
+              void globalSDK.client.global.dispose().catch(() => {})
+            },
+          },
+          {
+            label: "Dismiss",
+            onClick: "dismiss",
+          },
+        ],
+      })
+      return
+    }
+    if (eventType === "askuser.asked") {
+      const props = (event as unknown as { properties: AskUserQuestionRequest }).properties
+      const sessionID = props.sessionID
+      const questions = store.askuser[sessionID]
+      if (!questions) {
+        setStore("askuser", sessionID, [props])
+        return
+      }
+
+      const result = Binary.search(questions, props.id, (q) => q.id)
+      if (result.found) {
+        setStore("askuser", sessionID, result.index, reconcile(props))
+        return
+      }
+
+      setStore(
+        "askuser",
+        sessionID,
+        produce((draft) => {
+          draft.splice(result.index, 0, props)
+        }),
+      )
+    } else if (eventType === "askuser.replied") {
+      const props = (event as unknown as { properties: { sessionID: string; requestID: string } }).properties
+      const questions = store.askuser[props.sessionID]
+      if (!questions) return
+      const result = Binary.search(questions, props.requestID, (q) => q.id)
+      if (!result.found) return
+      setStore(
+        "askuser",
+        props.sessionID,
+        produce((draft) => {
+          draft.splice(result.index, 1)
+        }),
+      )
+    } else if (eventType === "planmode.review") {
+      const props = (event as unknown as { properties: PlanModeRequest }).properties
+      const sessionID = props.sessionID
+      const plans = store.planmode[sessionID]
+      if (!plans) {
+        setStore("planmode", sessionID, [props])
+        return
+      }
+
+      const result = Binary.search(plans, props.id, (p) => p.id)
+      if (result.found) {
+        setStore("planmode", sessionID, result.index, reconcile(props))
+        return
+      }
+
+      setStore(
+        "planmode",
+        sessionID,
+        produce((draft) => {
+          draft.splice(result.index, 0, props)
+        }),
+      )
+    } else if (eventType === "planmode.responded") {
+      const props = (event as unknown as { properties: { requestID: string; approved: boolean } }).properties
+      // Find and remove from all sessions (we don't have sessionID in the response)
+      for (const sessionID of Object.keys(store.planmode)) {
+        const plans = store.planmode[sessionID]
+        if (!plans) continue
+        const result = Binary.search(plans, props.requestID, (p) => p.id)
+        if (result.found) {
+          setStore(
+            "planmode",
+            sessionID,
+            produce((draft) => {
+              draft.splice(result.index, 1)
+            }),
+          )
+          return
+        }
       }
     }
   })

@@ -11,8 +11,9 @@ import { useDiffComponent } from "../context/diff"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 
 import { Binary } from "@opencode-ai/util/binary"
-import { createEffect, createMemo, For, Match, on, onCleanup, ParentProps, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, ParentProps, Show, Switch } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { getToolInfo } from "./message-part"
 import { DiffChanges } from "./diff-changes"
 import { Typewriter } from "./typewriter"
 import { Message, Part } from "./message-part"
@@ -74,6 +75,68 @@ function same<T>(a: readonly T[], b: readonly T[]) {
   return a.every((x, i) => x === b[i])
 }
 
+function StepsContainer(props: {
+  toolParts: { part: ToolPart; message: AssistantMessage }[]
+  expanded: boolean
+  working: boolean
+  status: string | undefined
+  duration: string
+  onToggle: () => void
+}) {
+  const [animatingIndex, setAnimatingIndex] = createSignal<number | null>(null)
+  const [prevLength, setPrevLength] = createSignal(0)
+
+  // Track when new tools are added and trigger animation
+  createEffect(() => {
+    const currentLength = props.toolParts.length
+    const prev = prevLength()
+
+    if (currentLength > prev && prev > 0) {
+      setAnimatingIndex(currentLength - 1)
+      const timeout = setTimeout(() => setAnimatingIndex(null), 300)
+      onCleanup(() => clearTimeout(timeout))
+    }
+
+    setPrevLength(currentLength)
+  })
+
+  // Get visible tools based on expanded state
+  const visibleTools = createMemo(() => {
+    const parts = props.toolParts
+    if (parts.length === 0) return []
+    if (props.expanded) return parts
+    if (parts.length === 1) return [parts[0]]
+    return [parts[parts.length - 2], parts[parts.length - 1]]
+  })
+
+  const hiddenCount = createMemo(() => props.expanded ? 0 : Math.max(0, props.toolParts.length - 2))
+
+  return (
+    <div data-component="steps-container" data-expanded={props.expanded}>
+      <div data-slot="steps-track" data-animating={animatingIndex() !== null}>
+        <For each={visibleTools()}>
+          {(item, index) => {
+            const isNew = () => animatingIndex() !== null && index() === visibleTools().length - 1
+            const isLast = () => index() === visibleTools().length - 1
+            return (
+              <div data-slot="steps-item" data-new={isNew()} data-last={isLast()}>
+                <Part part={item.part} message={item.message} hideDetails={!props.expanded} />
+              </div>
+            )
+          }}
+        </For>
+      </div>
+      <div data-slot="steps-footer" onClick={props.onToggle}>
+        <Show when={props.working && !props.expanded}>
+          <Spinner />
+        </Show>
+        <span>{props.expanded ? "Hide" : `Steps ${props.toolParts.length}+`}</span>
+        <Icon name="chevron-grabber-vertical" size="small" />
+      </div>
+    </div>
+  )
+}
+
 function AssistantMessageItem(props: {
   message: AssistantMessage
   responsePartId: string | undefined
@@ -117,6 +180,8 @@ export function SessionTurn(
     messageID: string
     lastUserMessageID?: string
     stepsExpanded?: boolean
+    hideTitle?: boolean
+    disableSticky?: boolean
     onStepsExpandedToggle?: () => void
     onUserInteracted?: () => void
     classes?: {
@@ -225,6 +290,21 @@ export function SessionTurn(
       }
     }
     return false
+  })
+
+  // Collect all tool parts for the carousel
+  const allToolParts = createMemo(() => {
+    const result: { part: ToolPart; message: AssistantMessage }[] = []
+    for (const m of assistantMessages()) {
+      const msgParts = data.store.part[m.id]
+      if (!msgParts) continue
+      for (const p of msgParts) {
+        if (p?.type === "tool") {
+          result.push({ part: p as ToolPart, message: m })
+        }
+      }
+    }
+    return result
   })
 
   const permissions = createMemo(() => data.store.permission?.[props.sessionID] ?? emptyPermissions)
@@ -468,83 +548,55 @@ export function SessionTurn(
                     <Part part={shellModePart()!} message={msg()} defaultOpen />
                   </Match>
                   <Match when={true}>
-                    {/* Title (sticky) */}
-                    <div ref={(el) => setStore("stickyTitleRef", el)} data-slot="session-turn-sticky-title">
-                      <div data-slot="session-turn-message-header">
-                        <div data-slot="session-turn-message-title">
-                          <Switch>
-                            <Match when={working()}>
-                              <Typewriter as="h1" text={msg().summary?.title} data-slot="session-turn-typewriter" />
-                            </Match>
-                            <Match when={true}>
-                              <h1>{msg().summary?.title}</h1>
-                            </Match>
-                          </Switch>
+                    {/* Title (sticky) - hidden when hideTitle prop is true */}
+                    <Show when={!props.hideTitle}>
+                      <div ref={(el) => setStore("stickyTitleRef", el)} data-slot="session-turn-sticky-title">
+                        <div data-slot="session-turn-message-header">
+                          <div data-slot="session-turn-message-title">
+                            <Switch>
+                              <Match when={working()}>
+                                <Typewriter as="h1" text={msg().summary?.title} data-slot="session-turn-typewriter" />
+                              </Match>
+                              <Match when={true}>
+                                <h1>{msg().summary?.title}</h1>
+                              </Match>
+                            </Switch>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </Show>
                     {/* User Message */}
                     <div data-slot="session-turn-message-content">
                       <Message message={msg()} parts={parts()} />
                     </div>
-                    {/* Trigger (sticky) */}
-                    <Show when={working() || hasSteps()}>
-                      <div ref={(el) => setStore("stickyTriggerRef", el)} data-slot="session-turn-response-trigger">
+                    {/* Working indicator - shows when working but no steps yet */}
+                    <Show when={working() && allToolParts().length === 0}>
+                      <div
+                        data-slot="session-turn-response-trigger"
+                        data-disable-sticky={props.disableSticky || undefined}
+                      >
                         <Button
-                          data-expandable={assistantMessages().length > 0}
                           data-slot="session-turn-collapsible-trigger-content"
                           variant="ghost"
                           size="small"
-                          onClick={props.onStepsExpandedToggle ?? (() => {})}
                         >
-                          <Show when={working()}>
-                            <Spinner />
-                          </Show>
-                          <Switch>
-                            <Match when={retry()}>
-                              <span data-slot="session-turn-retry-message">
-                                {(() => {
-                                  const r = retry()
-                                  if (!r) return ""
-                                  return r.message.length > 60 ? r.message.slice(0, 60) + "..." : r.message
-                                })()}
-                              </span>
-                              <span data-slot="session-turn-retry-seconds">
-                                · retrying {store.retrySeconds > 0 ? `in ${store.retrySeconds}s ` : ""}
-                              </span>
-                              <span data-slot="session-turn-retry-attempt">(#{retry()?.attempt})</span>
-                            </Match>
-                            <Match when={working()}>{store.status ?? "Considering next steps"}</Match>
-                            <Match when={props.stepsExpanded}>Hide steps</Match>
-                            <Match when={!props.stepsExpanded}>Show steps</Match>
-                          </Switch>
+                          <Spinner />
+                          <span>{store.status ?? "Considering next steps"}</span>
                           <span>·</span>
                           <span>{store.duration}</span>
-                          <Show when={assistantMessages().length > 0}>
-                            <Icon name="chevron-grabber-vertical" size="small" />
-                          </Show>
                         </Button>
                       </div>
                     </Show>
-                    {/* Response */}
-                    <Show when={props.stepsExpanded && assistantMessages().length > 0}>
-                      <div data-slot="session-turn-collapsible-content-inner">
-                        <For each={assistantMessages()}>
-                          {(assistantMessage) => (
-                            <AssistantMessageItem
-                              message={assistantMessage}
-                              responsePartId={responsePartId()}
-                              hideResponsePart={hideResponsePart()}
-                              hideReasoning={!working()}
-                            />
-                          )}
-                        </For>
-                        <Show when={error()}>
-                          <Card variant="error" class="error-card">
-                            {error()?.data?.message as string}
-                          </Card>
-                        </Show>
-                      </div>
+                    {/* Steps Container - unified for both collapsed and expanded */}
+                    <Show when={allToolParts().length > 0}>
+                      <StepsContainer
+                        toolParts={allToolParts()}
+                        expanded={props.stepsExpanded ?? false}
+                        working={working()}
+                        status={store.status}
+                        duration={store.duration}
+                        onToggle={props.onStepsExpandedToggle ?? (() => {})}
+                      />
                     </Show>
                     <Show when={!props.stepsExpanded && permissionParts().length > 0}>
                       <div data-slot="session-turn-permission-parts">

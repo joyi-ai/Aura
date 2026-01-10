@@ -1,19 +1,22 @@
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
-import type { Component } from "solid-js"
+import { createMemo, type Component } from "solid-js"
 import { useLocal } from "@/context/local"
 import { popularProviders } from "@/hooks/use-providers"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
+  const models = createMemo(() =>
+    local.model.list().filter((m) => m.provider.id !== "claude-agent" && m.provider.id !== "codex"),
+  )
   return (
     <Dialog title="Manage models" description="Customize which models appear in the model selector.">
       <List
         search={{ placeholder: "Search models", autofocus: true }}
         emptyMessage="No model results"
         key={(x) => `${x?.provider?.id}:${x?.id}`}
-        items={local.model.list()}
+        items={models}
         filterKeys={["provider.name", "name", "id"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         groupBy={(x) => x.provider.name}

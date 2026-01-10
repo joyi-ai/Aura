@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, on } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
@@ -12,6 +12,7 @@ import { Provider } from "@/provider/provider"
 import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
+import * as Mode from "@tui/mode"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -20,9 +21,83 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const toast = useToast()
 
+    const mode = iife(() => {
+      const [store, setStore] = createStore<{
+        current: Mode.ModeId
+      }>({
+        current: Mode.DEFAULT_MODE_ID,
+      })
+
+      const file = Bun.file(path.join(Global.Path.state, "mode.json"))
+
+      file
+        .json()
+        .then((x) => {
+          if (!x || typeof x !== "object") return
+          if (!("current" in x) || typeof x.current !== "string") return
+          setStore("current", x.current as Mode.ModeId)
+        })
+        .catch(() => {})
+
+      function save() {
+        Bun.write(file, JSON.stringify({ current: store.current }))
+      }
+
+      const env = createMemo(() => ({
+        plugins: sync.data.config.plugin ?? [],
+        agentNames: new Set(sync.data.agent.map((agent) => agent.name)),
+      }))
+
+      const list = createMemo(() => Mode.BUILTIN_MODES)
+
+      const current = createMemo(() => {
+        const selected = list().find((item) => item.id === store.current)
+        const fallback = list().find((item) => item.id === Mode.DEFAULT_MODE_ID) ?? list()[0]
+        if (!selected) return fallback!
+        if (Mode.isAvailable(selected, env())) return selected
+        return fallback!
+      })
+
+      const providerOverride = createMemo(() => current().providerOverride)
+
+      return {
+        list,
+        current,
+        providerOverride,
+        isAvailable(target: Mode.ModeDefinition) {
+          return Mode.isAvailable(target, env())
+        },
+        missingPlugins(target: Mode.ModeDefinition) {
+          return Mode.missingPlugins(target, env())
+        },
+        set(id: Mode.ModeId | undefined) {
+          const match = list().find((item) => item.id === id)
+          const next = match ?? list().find((item) => item.id === Mode.DEFAULT_MODE_ID) ?? list()[0]
+          if (!next) return
+          const missing = Mode.missingPlugins(next, env())
+          if (missing.length > 0) {
+            toast.show({
+              variant: "warning",
+              message: `Mode requires ${missing.join(", ")}`,
+              duration: 4000,
+            })
+            return
+          }
+          setStore("current", next.id)
+          save()
+        },
+      }
+    })
+
     function isModelValid(model: { providerID: string; modelID: string }) {
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
-      return !!provider?.models[model.modelID]
+      if (!provider?.models[model.modelID]) return false
+
+      const override = mode.providerOverride()
+      if (!override) return true
+      if (model.providerID === override) return true
+      if (mode.current().id === "claude-code" && model.providerID === "openrouter") return true
+      return false
     }
 
     function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
@@ -34,11 +109,29 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const agent = iife(() => {
-      const agents = createMemo(() => sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden))
+      const agents = createMemo(() => {
+        const active = mode.current()
+        const allowed = active?.allowedAgents?.length ? new Set(active.allowedAgents) : undefined
+        const candidates = sync.data.agent
+        const visible = allowed
+          ? candidates.filter((agent) => allowed.has(agent.name))
+          : candidates.filter((agent) => agent.mode !== "subagent" && !agent.hidden)
+
+        if (active?.id === "opencode" || active?.id === "claude-code" || active?.id === "codex") {
+          for (const name of ["build", "plan"]) {
+            const agent = candidates.find((item) => item.name === name)
+            if (agent && !visible.some((item) => item.name === name)) {
+              visible.push(agent)
+            }
+          }
+        }
+
+        return Mode.filterAgents(visible, active)
+      })
       const [agentStore, setAgentStore] = createStore<{
-        current: string
+        current?: string
       }>({
-        current: agents()[0].name,
+        current: agents()[0]?.name,
       })
       const { theme } = useTheme()
       const colors = createMemo(() => [
@@ -54,23 +147,38 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return agents()
         },
         current() {
-          return agents().find((x) => x.name === agentStore.current)!
+          const list = agents()
+          if (list.length === 0) return
+          return list.find((x) => x.name === agentStore.current) ?? list[0]
         },
         set(name: string) {
-          if (!agents().some((x) => x.name === name))
+          const list = agents()
+          if (list.length === 0) {
+            setAgentStore("current", undefined)
             return toast.show({
               variant: "warning",
               message: `Agent not found: ${name}`,
               duration: 3000,
             })
+          }
+          if (!list.some((x) => x.name === name)) {
+            setAgentStore("current", list[0]?.name)
+            return
+          }
           setAgentStore("current", name)
         },
         move(direction: 1 | -1) {
           batch(() => {
-            let next = agents().findIndex((x) => x.name === agentStore.current) + direction
-            if (next < 0) next = agents().length - 1
-            if (next >= agents().length) next = 0
-            const value = agents()[next]
+            const list = agents()
+            if (list.length === 0) {
+              setAgentStore("current", undefined)
+              return
+            }
+            let next = list.findIndex((x) => x.name === agentStore.current) + direction
+            if (next < 0) next = list.length - 1
+            if (next >= list.length) next = 0
+            const value = list[next]
+            if (!value) return
             setAgentStore("current", value.name)
           })
         },
@@ -139,6 +247,20 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const args = useArgs()
       const fallbackModel = createMemo(() => {
+        const override = mode.providerOverride()
+        if (override) {
+          const provider = sync.data.provider.find((x) => x.id === override)
+          if (!provider) return undefined
+          const defaultModel = sync.data.provider_default[provider.id]
+          const firstModel = Object.values(provider.models)[0]
+          const model = defaultModel ?? firstModel?.id
+          if (!model) return undefined
+          return {
+            providerID: provider.id,
+            modelID: model,
+          }
+        }
+
         if (args.model) {
           const { providerID, modelID } = Provider.parseModel(args.model)
           if (isModelValid({ providerID, modelID })) {
@@ -179,13 +301,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const currentModel = createMemo(() => {
         const a = agent.current()
-        return (
-          getFirstValidModel(
-            () => modelStore.model[a.name],
-            () => a.model,
-            fallbackModel,
-          ) ?? undefined
-        )
+        if (!a) return
+        return getFirstValidModel(() => modelStore.model[a.name], () => a.model, fallbackModel)
       })
 
       return {
@@ -227,7 +344,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (next >= recent.length) next = 0
           const val = recent[next]
           if (!val) return
-          setModelStore("model", agent.current().name, { ...val })
+          const currentAgent = agent.current()
+          if (!currentAgent) return
+          setModelStore("model", currentAgent.name, { ...val })
         },
         cycleFavorite(direction: 1 | -1) {
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
@@ -253,7 +372,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
           const next = favorites[index]
           if (!next) return
-          setModelStore("model", agent.current().name, { ...next })
+          const currentAgent = agent.current()
+          if (!currentAgent) return
+          setModelStore("model", currentAgent.name, { ...next })
           const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
           if (uniq.length > 10) uniq.pop()
           setModelStore(
@@ -272,7 +393,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               })
               return
             }
-            setModelStore("model", agent.current().name, model)
+            const currentAgent = agent.current()
+            if (!currentAgent) return
+            setModelStore("model", currentAgent.name, model)
             if (options?.recent) {
               const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
               if (uniq.length > 10) uniq.pop()
@@ -365,9 +488,36 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    createEffect(
+      on(() => mode.current().id, () => {
+        const available = agent.list()
+        if (available.length === 0) return
+        const preferred = mode.current().defaultAgent
+        if (preferred && available.some((item) => item.name === preferred)) {
+          agent.set(preferred)
+          return
+        }
+        agent.set(available[0].name)
+      }),
+    )
+
+    createEffect(() => {
+      const available = agent.list()
+      if (available.length === 0) return
+      const current = agent.current()
+      if (current && available.some((item) => item.name === current.name)) return
+      const preferred = mode.current().defaultAgent
+      if (preferred && available.some((item) => item.name === preferred)) {
+        agent.set(preferred)
+        return
+      }
+      agent.set(available[0].name)
+    })
+
     // Automatically update model when agent changes
     createEffect(() => {
       const value = agent.current()
+      if (!value) return
       if (value.model) {
         if (isModelValid(value.model))
           model.set({
@@ -386,6 +536,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const result = {
       model,
       agent,
+      mode,
       mcp,
     }
     return result

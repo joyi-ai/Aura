@@ -11,6 +11,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
 import { type SystemError } from "bun"
+import { Log } from "@/util/log"
 
 export namespace MessageV2 {
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
@@ -315,6 +316,10 @@ export namespace MessageV2 {
     system: z.string().optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
     variant: z.string().optional(),
+    /** Enable extended thinking for Claude Code mode */
+    thinking: z.boolean().optional(),
+    /** Use Claude Code flow (Agent SDK) - for OpenRouter models in Claude Code mode */
+    claudeCodeFlow: z.boolean().optional(),
   }).meta({
     ref: "UserMessage",
   })
@@ -561,15 +566,22 @@ export namespace MessageV2 {
     }
   })
 
-  export const parts = fn(Identifier.schema("message"), async (messageID) => {
-    const result = [] as MessageV2.Part[]
-    for (const item of await Storage.list(["part", messageID])) {
-      const read = await Storage.read<MessageV2.Part>(item)
-      result.push(read)
-    }
-    result.sort((a, b) => (a.id > b.id ? 1 : -1))
-    return result
+  // Storage format for messages with inline parts
+  const StoredMessage = z.object({
+    info: Info,
+    parts: z.array(Part),
   })
+  type StoredMessage = z.infer<typeof StoredMessage>
+
+  export const parts = fn(
+    z.object({
+      sessionID: Identifier.schema("session"),
+      messageID: Identifier.schema("message"),
+    }),
+    async (input) => {
+      return MessageV2.PartStore.getParts(input.sessionID, input.messageID)
+    },
+  )
 
   export const get = fn(
     z.object({
@@ -577,9 +589,12 @@ export namespace MessageV2 {
       messageID: Identifier.schema("message"),
     }),
     async (input) => {
+      const stored = await Storage.read<StoredMessage>(["message", input.sessionID, input.messageID])
+      // Always use PartStore.getParts to get the latest parts (including cached but not-yet-flushed)
+      const cachedParts = await MessageV2.PartStore.getParts(input.sessionID, input.messageID)
       return {
-        info: await Storage.read<MessageV2.Info>(["message", input.sessionID, input.messageID]),
-        parts: await parts(input.messageID),
+        info: stored.info,
+        parts: cachedParts,
       }
     },
   )
@@ -678,6 +693,275 @@ export namespace MessageV2 {
         return new NamedError.Unknown({ message: e.toString() }, { cause: e }).toObject()
       default:
         return new NamedError.Unknown({ message: JSON.stringify(e) }, { cause: e })
+    }
+  }
+
+  // PartStore - embedded to avoid circular dependency
+  export namespace PartStore {
+    const log = Log.create({ service: "part-store" })
+
+    const DEBOUNCE_MS = 100
+    const MAX_CACHE_SIZE = 100 // Max number of messages to cache
+
+    interface StoredMessageWithParts {
+      info: Info
+      parts: Part[]
+    }
+
+    /**
+     * Simple LRU cache with eviction callback
+     */
+    class LRUCache<K, V> {
+      private cache = new Map<K, V>()
+      private order: K[] = []
+
+      constructor(
+        private maxSize: number,
+        private onEvict?: (key: K, value: V) => void,
+      ) {}
+
+      get(key: K): V | undefined {
+        const value = this.cache.get(key)
+        if (value !== undefined) {
+          // Move to end (most recently used)
+          const idx = this.order.indexOf(key)
+          if (idx > -1) {
+            this.order.splice(idx, 1)
+            this.order.push(key)
+          }
+        }
+        return value
+      }
+
+      set(key: K, value: V): void {
+        if (this.cache.has(key)) {
+          const idx = this.order.indexOf(key)
+          if (idx > -1) this.order.splice(idx, 1)
+        } else if (this.cache.size >= this.maxSize) {
+          const oldest = this.order.shift()
+          if (oldest !== undefined) {
+            const evicted = this.cache.get(oldest)
+            this.cache.delete(oldest)
+            if (evicted !== undefined && this.onEvict) {
+              this.onEvict(oldest, evicted)
+            }
+          }
+        }
+        this.cache.set(key, value)
+        this.order.push(key)
+      }
+
+      has(key: K): boolean {
+        return this.cache.has(key)
+      }
+
+      delete(key: K): boolean {
+        const idx = this.order.indexOf(key)
+        if (idx > -1) this.order.splice(idx, 1)
+        return this.cache.delete(key)
+      }
+
+      clear(): void {
+        this.cache.clear()
+        this.order = []
+      }
+    }
+
+    // Pending flush timers by messageID
+    const pendingFlush = new Map<string, Timer>()
+
+    // Track dirty messages that need to be written
+    const dirtyMessages = new Set<string>()
+
+    // Eviction handler - flush dirty entries before evicting
+    function handleEviction(key: string, _parts: Part[]) {
+      if (dirtyMessages.has(key)) {
+        const [sessionID, messageID] = key.split(":")
+        flushMessage(sessionID, messageID).catch((e) => {
+          log.error("failed to flush on eviction", { key, error: e })
+        })
+      }
+      messageInfoCache.delete(key)
+      dirtyMessages.delete(key)
+      const timer = pendingFlush.get(key)
+      if (timer) {
+        clearTimeout(timer)
+        pendingFlush.delete(key)
+      }
+    }
+
+    // In-memory cache of parts by messageID with LRU eviction
+    const partsCache = new LRUCache<string, Part[]>(MAX_CACHE_SIZE, handleEviction)
+
+    // Message info cache (bounded by parts cache eviction)
+    const messageInfoCache = new Map<string, Info>()
+
+    function getCacheKey(sessionID: string, messageID: string) {
+      return `${sessionID}:${messageID}`
+    }
+
+    export function cacheMessageInfo(info: Info) {
+      const key = getCacheKey(info.sessionID, info.id)
+      messageInfoCache.set(key, info)
+    }
+
+    export async function getParts(sessionID: string, messageID: string): Promise<Part[]> {
+      const key = getCacheKey(sessionID, messageID)
+
+      // Check cache first
+      const cached = partsCache.get(key)
+      if (cached) return cached
+
+      // Read from storage (inline parts format)
+      const message = await Storage.read<StoredMessageWithParts>(["message", sessionID, messageID]).catch(() => null)
+      if (message?.parts) {
+        const parts = message.parts.slice().sort((a, b) => (a.id > b.id ? 1 : -1))
+        partsCache.set(key, parts)
+        messageInfoCache.set(key, message.info)
+        return parts
+      }
+
+      // No parts found - return empty array and cache it
+      partsCache.set(key, [])
+      return []
+    }
+
+    export async function updatePart(part: Part): Promise<void> {
+      const key = getCacheKey(part.sessionID, part.messageID)
+
+      // Get or initialize cache
+      let parts = partsCache.get(key)
+      if (!parts) {
+        parts = await getParts(part.sessionID, part.messageID)
+      }
+
+      // Update part in cache
+      const idx = parts.findIndex((p) => p.id === part.id)
+      if (idx >= 0) {
+        parts[idx] = part
+      } else {
+        parts.push(part)
+        parts.sort((a, b) => (a.id > b.id ? 1 : -1))
+      }
+      partsCache.set(key, parts)
+      dirtyMessages.add(key)
+
+      // Debounce the disk write
+      scheduleFlush(part.sessionID, part.messageID)
+    }
+
+    export async function removePart(sessionID: string, messageID: string, partID: string): Promise<void> {
+      const key = getCacheKey(sessionID, messageID)
+
+      // Get cache
+      let parts = partsCache.get(key)
+      if (!parts) {
+        parts = await getParts(sessionID, messageID)
+      }
+
+      // Remove from cache
+      const idx = parts.findIndex((p) => p.id === partID)
+      if (idx >= 0) {
+        parts.splice(idx, 1)
+        partsCache.set(key, parts)
+        dirtyMessages.add(key)
+        scheduleFlush(sessionID, messageID)
+      }
+    }
+
+    function scheduleFlush(sessionID: string, messageID: string) {
+      const key = getCacheKey(sessionID, messageID)
+
+      // Clear existing timer
+      const existing = pendingFlush.get(key)
+      if (existing) clearTimeout(existing)
+
+      // Schedule new flush
+      const timer = setTimeout(() => {
+        flushMessage(sessionID, messageID).catch((e) => {
+          log.error("failed to flush message", { sessionID, messageID, error: e })
+        })
+      }, DEBOUNCE_MS)
+
+      pendingFlush.set(key, timer)
+    }
+
+    async function flushMessage(sessionID: string, messageID: string): Promise<void> {
+      const key = getCacheKey(sessionID, messageID)
+      pendingFlush.delete(key)
+
+      if (!dirtyMessages.has(key)) return
+      dirtyMessages.delete(key)
+
+      const parts = partsCache.get(key)
+      if (!parts) return
+
+      // Get message info from cache or storage
+      let info: Info | undefined = messageInfoCache.get(key)
+      if (!info) {
+        const message = await Storage.read<StoredMessageWithParts>(["message", sessionID, messageID]).catch(() => null)
+        if (message?.info) {
+          info = message.info
+        }
+      }
+
+      if (!info) {
+        log.warn("cannot flush parts - message info not found", { sessionID, messageID })
+        return
+      }
+
+      // Write message with inline parts
+      await Storage.write(["message", sessionID, messageID], {
+        info,
+        parts: parts.slice().sort((a, b) => (a.id > b.id ? 1 : -1)),
+      })
+    }
+
+    export async function flush(sessionID: string, messageID: string): Promise<void> {
+      const key = getCacheKey(sessionID, messageID)
+
+      // Clear pending timer
+      const timer = pendingFlush.get(key)
+      if (timer) {
+        clearTimeout(timer)
+        pendingFlush.delete(key)
+      }
+
+      // Force flush if dirty
+      if (dirtyMessages.has(key)) {
+        await flushMessage(sessionID, messageID)
+      }
+    }
+
+    export async function flushAll(): Promise<void> {
+      const promises: Promise<void>[] = []
+      for (const key of dirtyMessages) {
+        const [sessionID, messageID] = key.split(":")
+        promises.push(flush(sessionID, messageID))
+      }
+      await Promise.all(promises)
+    }
+
+    export function clearCache(sessionID: string, messageID: string): void {
+      const key = getCacheKey(sessionID, messageID)
+      partsCache.delete(key)
+      messageInfoCache.delete(key)
+      dirtyMessages.delete(key)
+      const timer = pendingFlush.get(key)
+      if (timer) {
+        clearTimeout(timer)
+        pendingFlush.delete(key)
+      }
+    }
+
+    export function clearAllCache(): void {
+      partsCache.clear()
+      messageInfoCache.clear()
+      dirtyMessages.clear()
+      for (const timer of pendingFlush.values()) {
+        clearTimeout(timer)
+      }
+      pendingFlush.clear()
     }
   }
 }

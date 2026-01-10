@@ -33,6 +33,7 @@ import { Button } from "./button"
 import { Card } from "./card"
 import { Icon } from "./icon"
 import { Checkbox } from "./checkbox"
+import { AskUserQuestion } from "./ask-user-question"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
@@ -1025,5 +1026,12 @@ ToolRegistry.register({
         </Show>
       </BasicTool>
     )
+  },
+})
+
+ToolRegistry.register({
+  name: "AskUserQuestion",
+  render(props) {
+    return <AskUserQuestion {...props} />
   },
 })

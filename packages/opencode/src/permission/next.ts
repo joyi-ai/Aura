@@ -7,6 +7,7 @@ import { Storage } from "@/storage/storage"
 import { fn } from "@/util/fn"
 import { Log } from "@/util/log"
 import { Wildcard } from "@/util/wildcard"
+import { ClaudePlugin } from "@/claude-plugin"
 import z from "zod"
 
 export namespace PermissionNext {
@@ -137,6 +138,12 @@ export namespace PermissionNext {
               resolve,
               reject,
             }
+            // Trigger PermissionRequest hook
+            ClaudePlugin.Hooks.trigger("PermissionRequest", {
+              sessionID: request.sessionID,
+              permission: request.permission,
+              patterns: request.patterns,
+            })
             Bus.publish(Event.Asked, info)
           })
         }

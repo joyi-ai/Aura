@@ -1,7 +1,11 @@
 mod cli;
+mod stt;
 mod window_customizer;
 
-use cli::{get_sidecar_path, install_cli, sync_cli};
+#[cfg(not(target_os = "windows"))]
+use cli::get_sidecar_path;
+use cli::{install_cli, sync_cli};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use futures::FutureExt;
 use std::{
     collections::VecDeque,
@@ -15,6 +19,7 @@ use tauri::{
 };
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_store::StoreExt;
 use tokio::net::TcpSocket;
 
 use crate::window_customizer::PinchZoomDisablePlugin;
@@ -45,6 +50,65 @@ impl ServerState {
 struct LogState(Arc<Mutex<VecDeque<String>>>);
 
 const MAX_LOG_ENTRIES: usize = 200;
+const GLOBAL_STORAGE: &str = "opencode.global.dat";
+
+/// Check if a URL's origin matches any configured server in the store.
+/// Returns true if the URL should be allowed for internal navigation.
+fn is_allowed_server(app: &AppHandle, url: &tauri::Url) -> bool {
+    // Always allow localhost and 127.0.0.1
+    if let Some(host) = url.host_str() {
+        if host == "localhost" || host == "127.0.0.1" {
+            return true;
+        }
+    }
+
+    // Try to read the server list from the store
+    let Ok(store) = app.store(GLOBAL_STORAGE) else {
+        return false;
+    };
+
+    let Some(server_data) = store.get("server") else {
+        return false;
+    };
+
+    // Parse the server list from the stored JSON
+    let Some(list) = server_data.get("list").and_then(|v| v.as_array()) else {
+        return false;
+    };
+
+    // Get the origin of the navigation URL (scheme + host + port)
+    let url_origin = format!(
+        "{}://{}{}",
+        url.scheme(),
+        url.host_str().unwrap_or(""),
+        url.port().map(|p| format!(":{}", p)).unwrap_or_default()
+    );
+
+    // Check if any configured server matches the URL's origin
+    for server in list {
+        let Some(server_url) = server.as_str() else {
+            continue;
+        };
+
+        // Parse the server URL to extract its origin
+        let Ok(parsed) = tauri::Url::parse(server_url) else {
+            continue;
+        };
+
+        let server_origin = format!(
+            "{}://{}{}",
+            parsed.scheme(),
+            parsed.host_str().unwrap_or(""),
+            parsed.port().map(|p| format!(":{}", p)).unwrap_or_default()
+        );
+
+        if url_origin == server_origin {
+            return true;
+        }
+    }
+
+    false
+}
 
 #[tauri::command]
 fn kill_sidecar(app: AppHandle) {
@@ -68,6 +132,25 @@ fn kill_sidecar(app: AppHandle) {
     println!("Killed server");
 }
 
+#[tauri::command]
+async fn copy_logs_to_clipboard(app: AppHandle) -> Result<(), String> {
+    let log_state = app.try_state::<LogState>().ok_or("Log state not found")?;
+
+    let logs = log_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to acquire log lock")?;
+
+    let log_text = logs.iter().cloned().collect::<Vec<_>>().join("");
+
+    app.clipboard()
+        .write_text(log_text)
+        .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_logs(app: AppHandle) -> Result<String, String> {
     let log_state = app.try_state::<LogState>().ok_or("Log state not found")?;
 
@@ -77,6 +160,53 @@ async fn get_logs(app: AppHandle) -> Result<String, String> {
         .map_err(|_| "Failed to acquire log lock")?;
 
     Ok(logs.iter().cloned().collect::<Vec<_>>().join(""))
+}
+
+// ============================================================================
+// Speech-to-Text Commands
+// ============================================================================
+
+#[tauri::command]
+async fn stt_get_status(app: AppHandle) -> Result<stt::SttStatus, String> {
+    let state = app
+        .try_state::<stt::SharedSttState>()
+        .ok_or("STT state not found")?;
+    let state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    Ok(state.get_status())
+}
+
+#[tauri::command]
+async fn stt_download_model(app: AppHandle) -> Result<(), String> {
+    stt::download_models(app).await
+}
+
+#[tauri::command]
+async fn stt_start_recording(app: AppHandle) -> Result<(), String> {
+    let state = app
+        .try_state::<stt::SharedSttState>()
+        .ok_or("STT state not found")?;
+    let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    state.start_recording()
+}
+
+#[tauri::command]
+async fn stt_push_audio(app: AppHandle, samples: Vec<f32>) -> Result<(), String> {
+    let state = app
+        .try_state::<stt::SharedSttState>()
+        .ok_or("STT state not found")?;
+    let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    state.push_audio(samples)
+}
+
+#[tauri::command]
+async fn stt_stop_and_transcribe(app: AppHandle) -> Result<String, String> {
+    let state = app
+        .try_state::<stt::SharedSttState>()
+        .ok_or("STT state not found")?;
+
+    let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let audio = state.stop_recording();
+    state.transcribe(&audio)
 }
 
 #[tauri::command]
@@ -129,7 +259,7 @@ fn spawn_sidecar(app: &AppHandle, port: u32) -> CommandChild {
 
     #[cfg(not(target_os = "windows"))]
     let (mut rx, child) = {
-        let sidecar = get_sidecar_path(app);
+        let sidecar = get_sidecar_path();
         let shell = get_user_shell();
         app.shell()
             .command(&shell)
@@ -218,14 +348,24 @@ pub fn run() {
         .plugin(PinchZoomDisablePlugin)
         .invoke_handler(tauri::generate_handler![
             kill_sidecar,
+            copy_logs_to_clipboard,
+            get_logs,
             install_cli,
-            ensure_server_started
+            ensure_server_started,
+            stt_get_status,
+            stt_download_model,
+            stt_start_recording,
+            stt_push_audio,
+            stt_stop_and_transcribe
         ])
         .setup(move |app| {
             let app = app.handle().clone();
 
             // Initialize log state
             app.manage(LogState(Arc::new(Mutex::new(VecDeque::new()))));
+
+            // Initialize STT state
+            app.manage(stt::init_stt_state(&app));
 
             // Get port and create window immediately for faster perceived startup
             let port = get_sidecar_port();
@@ -236,6 +376,7 @@ pub fn run() {
                 .unwrap_or(LogicalSize::new(1920, 1080));
 
             // Create window immediately with serverReady = false
+            let app_for_nav = app.clone();
             let mut window_builder =
                 WebviewWindow::builder(&app, "main", WebviewUrl::App("/".into()))
                     .title("OpenCode")
@@ -243,6 +384,22 @@ pub fn run() {
                     .decorations(true)
                     .zoom_hotkeys_enabled(true)
                     .disable_drag_drop_handler()
+                    .on_navigation(move |url| {
+                        // Allow internal navigation (tauri:// scheme)
+                        if url.scheme() == "tauri" {
+                            return true;
+                        }
+                        // Allow navigation to configured servers (localhost, 127.0.0.1, or remote)
+                        if is_allowed_server(&app_for_nav, url) {
+                            return true;
+                        }
+                        // Open external http/https URLs in default browser
+                        if url.scheme() == "http" || url.scheme() == "https" {
+                            let _ = app_for_nav.shell().open(url.as_str(), None);
+                            return false; // Cancel internal navigation
+                        }
+                        true
+                    })
                     .initialization_script(format!(
                         r#"
                       window.__OPENCODE__ ??= {{}};

@@ -10,6 +10,7 @@ export namespace Identifier {
     user: "usr",
     part: "prt",
     pty: "pty",
+    askuser: "ask",
     tool: "tool",
   } as const
 

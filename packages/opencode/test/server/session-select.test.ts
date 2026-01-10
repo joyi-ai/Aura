@@ -29,7 +29,7 @@ describe("tui.selectSession endpoint", () => {
         const body = await response.json()
         expect(body).toBe(true)
 
-        await Session.remove(session.id)
+        await Session.remove({ sessionID: session.id })
       },
     })
   })

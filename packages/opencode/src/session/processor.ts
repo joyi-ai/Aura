@@ -140,7 +140,7 @@ export namespace SessionProcessor {
                     })
                     toolcalls[value.toolCallId] = part as MessageV2.ToolPart
 
-                    const parts = await MessageV2.parts(input.assistantMessage.id)
+                    const parts = await MessageV2.parts({ sessionID: input.sessionID, messageID: input.assistantMessage.id })
                     const lastThree = parts.slice(-DOOM_LOOP_THRESHOLD)
 
                     if (
@@ -375,7 +375,7 @@ export namespace SessionProcessor {
             }
             snapshot = undefined
           }
-          const p = await MessageV2.parts(input.assistantMessage.id)
+          const p = await MessageV2.parts({ sessionID: input.sessionID, messageID: input.assistantMessage.id })
           for (const part of p) {
             if (part.type === "tool" && part.state.status !== "completed" && part.state.status !== "error") {
               await Session.updatePart({
@@ -393,6 +393,8 @@ export namespace SessionProcessor {
             }
           }
           input.assistantMessage.time.completed = Date.now()
+          // Flush any pending part writes before final message update
+          await MessageV2.PartStore.flush(input.sessionID, input.assistantMessage.id)
           await Session.updateMessage(input.assistantMessage)
           if (needsCompaction) return "compact"
           if (blocked) return "stop"

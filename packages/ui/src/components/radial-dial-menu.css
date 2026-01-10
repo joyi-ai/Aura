@@ -1,0 +1,65 @@
+[data-component="radial-dial-menu"] {
+  animation: radial-dial-open 0.15s ease-out;
+}
+
+[data-slot="radial-dial-backdrop"] {
+  fill: var(--surface-base);
+  opacity: 0.85;
+}
+
+[data-slot="radial-dial-segment"] {
+  fill: var(--surface-raised-base);
+  stroke: var(--border-weak-base);
+  stroke-width: 1;
+  transition: fill 0.1s ease-out, stroke 0.1s ease-out;
+
+  &[data-highlighted="true"] {
+    fill: var(--surface-raised-base-hover);
+    stroke: var(--border-accent-base);
+    stroke-width: 2;
+  }
+}
+
+[data-slot="radial-dial-label"] {
+  fill: var(--text-weak);
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  font-weight: 500;
+  text-anchor: middle;
+  transition: fill 0.1s ease-out;
+
+  &[data-highlighted="true"] {
+    fill: var(--text-strong);
+  }
+}
+
+[data-slot="radial-dial-icon"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--icon-base);
+  transition: color 0.1s ease-out;
+
+  &[data-highlighted="true"] {
+    color: var(--icon-strong-base);
+  }
+}
+
+[data-slot="radial-dial-center"] {
+  fill: var(--border-weak-base);
+}
+
+[data-slot="radial-dial-label-group"] {
+  pointer-events: none;
+}
+
+@keyframes radial-dial-open {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}

@@ -75,13 +75,56 @@ export namespace ModelsDev {
 
   export type Provider = z.infer<typeof Provider>
 
+  const CODEX_DEFAULT_MODEL = "gpt-5.2-codex"
+  const CODEX_PROVIDER: Provider = {
+    id: "codex",
+    name: "Codex",
+    api: "https://api.openai.com/v1",
+    env: [],
+    npm: "@ai-sdk/openai-compatible",
+    models: {
+      [CODEX_DEFAULT_MODEL]: {
+        id: CODEX_DEFAULT_MODEL,
+        name: "GPT-5.2 Codex",
+        family: "codex",
+        release_date: "2025-01-01",
+        attachment: true,
+        reasoning: true,
+        temperature: false,
+        tool_call: true,
+        limit: {
+          context: 200000,
+          output: 16000,
+        },
+        modalities: {
+          input: ["text", "image", "pdf"],
+          output: ["text"],
+        },
+        variants: {
+          low: { reasoningEffort: "low" },
+          medium: { reasoningEffort: "medium" },
+          high: { reasoningEffort: "high" },
+        },
+        options: {},
+      },
+    },
+  }
+
+  function withCodex(input: Record<string, Provider>) {
+    if (input["codex"]) return input
+    return {
+      ...input,
+      codex: CODEX_PROVIDER,
+    }
+  }
+
   export async function get() {
     refresh()
     const file = Bun.file(filepath)
     const result = await file.json().catch(() => {})
-    if (result) return result as Record<string, Provider>
+    if (result) return withCodex(result as Record<string, Provider>)
     const json = await data()
-    return JSON.parse(json) as Record<string, Provider>
+    return withCodex(JSON.parse(json) as Record<string, Provider>)
   }
 
   export async function refresh() {

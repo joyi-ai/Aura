@@ -7,11 +7,16 @@ import { createSimpleContext } from "../context/helper"
 
 export type ColorScheme = "light" | "dark" | "system"
 
+export type GradientMode = "soft" | "crisp"
+export type GradientColor = "relative" | "strong"
+
 const STORAGE_KEYS = {
   THEME_ID: "opencode-theme-id",
   COLOR_SCHEME: "opencode-color-scheme",
   THEME_CSS_LIGHT: "opencode-theme-css-light",
   THEME_CSS_DARK: "opencode-theme-css-dark",
+  GRADIENT_MODE: "opencode-gradient-mode",
+  GRADIENT_COLOR: "opencode-gradient-color",
 } as const
 
 const THEME_STYLE_ID = "oc-theme"
@@ -74,6 +79,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       themeId: props.defaultTheme ?? "oc-1",
       colorScheme: "system" as ColorScheme,
       mode: getSystemMode(),
+      gradientMode: "soft" as GradientMode,
+      gradientColor: "strong" as GradientColor,
       previewThemeId: null as string | null,
       previewScheme: null as ColorScheme | null,
     })
@@ -90,6 +97,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
       const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME_ID)
       const savedScheme = localStorage.getItem(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null
+      const savedGradientMode = localStorage.getItem(STORAGE_KEYS.GRADIENT_MODE) as GradientMode | null
       if (savedTheme && store.themes[savedTheme]) {
         setStore("themeId", savedTheme)
       }
@@ -98,6 +106,13 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         if (savedScheme !== "system") {
           setStore("mode", savedScheme)
         }
+      }
+      if (savedGradientMode && (savedGradientMode === "soft" || savedGradientMode === "crisp")) {
+        setStore("gradientMode", savedGradientMode)
+      }
+      const savedGradientColor = localStorage.getItem(STORAGE_KEYS.GRADIENT_COLOR) as GradientColor | null
+      if (savedGradientColor && (savedGradientColor === "relative" || savedGradientColor === "strong")) {
+        setStore("gradientColor", savedGradientColor)
       }
       const currentTheme = store.themes[store.themeId]
       if (currentTheme) {
@@ -129,13 +144,28 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       setStore("mode", scheme === "system" ? getSystemMode() : scheme)
     }
 
+    const setGradientMode = (mode: GradientMode) => {
+      setStore("gradientMode", mode)
+      localStorage.setItem(STORAGE_KEYS.GRADIENT_MODE, mode)
+    }
+
+    const setGradientColor = (color: GradientColor) => {
+      setStore("gradientColor", color)
+      localStorage.setItem(STORAGE_KEYS.GRADIENT_COLOR, color)
+    }
+
     return {
       themeId: () => store.themeId,
       colorScheme: () => store.colorScheme,
       mode: () => store.mode,
+      gradientMode: () => store.gradientMode,
+      gradientColor: () => store.gradientColor,
+      previewThemeId: () => store.previewThemeId,
       themes: () => store.themes,
       setTheme,
       setColorScheme,
+      setGradientMode,
+      setGradientColor,
       registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
       previewTheme: (id: string) => {
         const theme = store.themes[id]

@@ -414,6 +414,12 @@ export function Autocomplete(props: {
         onSelect: () => command.trigger("agent.list"),
       },
       {
+        display: "/mode",
+        aliases: ["/modes"],
+        description: "switch mode",
+        onSelect: () => command.trigger("mode.list"),
+      },
+      {
         display: "/session",
         aliases: ["/resume", "/continue"],
         description: "list sessions",

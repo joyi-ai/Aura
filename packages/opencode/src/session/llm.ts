@@ -90,11 +90,11 @@ export namespace LLM {
 
     const variant =
       !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
-    const base = input.small
-      ? ProviderTransform.smallOptions(input.model)
-      : ProviderTransform.options(input.model, input.sessionID, provider.options)
-    const options: Record<string, any> = pipe(
-      base,
+    const small = input.small ? ProviderTransform.smallOptions(input.model) : {}
+    const baseOptions = await ProviderTransform.options(input.model, input.sessionID, provider.options)
+    const options = pipe(
+      baseOptions,
+      mergeDeep(small),
       mergeDeep(input.model.options),
       mergeDeep(input.agent.options),
       mergeDeep(variant),

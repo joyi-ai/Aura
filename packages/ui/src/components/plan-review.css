@@ -1,0 +1,54 @@
+@layer components {
+  [data-component="plan-review"] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised-base);
+    border: 1px solid var(--border-base);
+  }
+
+  [data-component="plan-review"][data-completed] {
+    padding: 0.5rem 0.75rem;
+  }
+
+  [data-slot="plan-review-header"] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--font-size-13);
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+
+  [data-slot="plan-review-content"] {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    background: var(--surface-base);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-weaker-base);
+    font-size: var(--font-size-13);
+  }
+
+  [data-slot="plan-review-content"] [data-component="markdown"] {
+    font-size: var(--font-size-13);
+  }
+
+  [data-slot="plan-review-actions"] {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-weaker-base);
+  }
+
+  [data-slot="plan-review-response"] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-weak);
+    font-size: var(--font-size-13);
+  }
+}

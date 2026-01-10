@@ -20,7 +20,7 @@ import { FileProvider } from "@/context/file"
 import { NotificationProvider } from "@/context/notification"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { CommandProvider } from "@/context/command"
-import { Logo } from "@opencode-ai/ui/logo"
+import { VoiceProvider } from "@/context/voice"
 import Layout from "@/pages/layout"
 import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "./pages/error"
@@ -29,13 +29,34 @@ import { Suspense } from "solid-js"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
+const Marketplace = lazy(() => import("@/pages/marketplace"))
+const MultiPanePage = lazy(() => import("@/pages/multi-pane"))
 const Loading = () => <div class="size-full flex items-center justify-center text-text-weak">Loading...</div>
+
+export { PlatformProvider, type Platform } from "@/context/platform"
 
 declare global {
   interface Window {
     __OPENCODE__?: { updaterEnabled?: boolean; port?: number; serverReady?: boolean }
+    __OPENCODE_SAFE_GET_COMPUTED_STYLE__?: boolean
   }
 }
+
+const ensureSafeGetComputedStyle = () => {
+  if (typeof window === "undefined") return
+  if (window.__OPENCODE_SAFE_GET_COMPUTED_STYLE__) return
+  if (typeof document === "undefined") return
+  const fallback = document.createElement("div")
+  const original = window.getComputedStyle.bind(window)
+  // floating-ui can call getComputedStyle with non-elements during unmount
+  window.getComputedStyle = ((element, pseudo) => {
+    if (element instanceof Element) return original(element, pseudo)
+    return original(fallback, pseudo)
+  }) as typeof window.getComputedStyle
+  window.__OPENCODE_SAFE_GET_COMPUTED_STYLE__ = true
+}
+
+ensureSafeGetComputedStyle()
 
 const defaultServerUrl = iife(() => {
   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
@@ -86,7 +107,9 @@ export function AppInterface() {
                   <LayoutProvider>
                     <NotificationProvider>
                       <CommandProvider>
-                        <Layout>{props.children}</Layout>
+                        <VoiceProvider>
+                          <Layout>{props.children}</Layout>
+                        </VoiceProvider>
                       </CommandProvider>
                     </NotificationProvider>
                   </LayoutProvider>
@@ -101,20 +124,38 @@ export function AppInterface() {
                   </Suspense>
                 )}
               />
+              <Route
+                path="/marketplace"
+                component={() => (
+                  <Suspense fallback={<Loading />}>
+                    <Marketplace />
+                  </Suspense>
+                )}
+              />
+              <Route
+                path="/multi"
+                component={() => (
+                  <Suspense fallback={<Loading />}>
+                    <MultiPanePage />
+                  </Suspense>
+                )}
+              />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={() => <Navigate href="session" />} />
                 <Route
                   path="/session/:id?"
-                  component={() => (
-                    <TerminalProvider>
-                      <FileProvider>
-                        <PromptProvider>
-                          <Suspense fallback={<Loading />}>
-                            <Session />
-                          </Suspense>
-                        </PromptProvider>
-                      </FileProvider>
-                    </TerminalProvider>
+                  component={(p) => (
+                    <Show when={p.params.id ?? "new"} keyed>
+                      <TerminalProvider>
+                        <FileProvider>
+                          <PromptProvider>
+                            <Suspense fallback={<Loading />}>
+                              <Session />
+                            </Suspense>
+                          </PromptProvider>
+                        </FileProvider>
+                      </TerminalProvider>
+                    </Show>
                   )}
                 />
               </Route>
@@ -123,5 +164,13 @@ export function AppInterface() {
         </GlobalSDKProvider>
       </ServerKey>
     </ServerProvider>
+  )
+}
+
+export function App() {
+  return (
+    <AppBaseProviders>
+      <AppInterface />
+    </AppBaseProviders>
   )
 }

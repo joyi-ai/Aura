@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createRoot, onCleanup } from "solid-js"
+import { batch, createMemo, type Accessor } from "solid-js"
 import { useParams } from "@solidjs/router"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
@@ -99,146 +99,184 @@ function clonePrompt(prompt: Prompt): Prompt {
   return prompt.map(clonePart)
 }
 
-const WORKSPACE_KEY = "__workspace__"
-const MAX_PROMPT_SESSIONS = 20
+export const { use: usePrompt, provider: PromptProvider } = createSimpleContext<
+  ReturnType<typeof createPromptContext>,
+  { paneId?: string }
+>({
+  name: "Prompt",
+  init: (props) => createPromptContext(() => props?.paneId),
+})
 
-type PromptSession = ReturnType<typeof createPromptSession>
-
-type PromptCacheEntry = {
-  value: PromptSession
-  dispose: VoidFunction
+type PromptEntry = {
+  prompt: Prompt
+  cursor?: number
+  context: {
+    activeTab: boolean
+    items: (ContextItem & { key: string })[]
+  }
 }
 
-function createPromptSession(dir: string, id: string | undefined) {
-  const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
+type PromptStore = {
+  entries: Record<string, PromptEntry>
+}
 
-  const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "prompt", [legacy]),
-    createStore<{
-      prompt: Prompt
-      cursor?: number
+function createDefaultEntry(): PromptEntry {
+  return {
+    prompt: clonePrompt(DEFAULT_PROMPT),
+    cursor: undefined,
+    context: {
+      activeTab: true,
+      items: [],
+    },
+  }
+}
+
+function normalizeEntry(entry: PromptEntry | undefined): PromptEntry {
+  const fallback = createDefaultEntry()
+  if (!entry) return fallback
+  const prompt = Array.isArray(entry.prompt) ? entry.prompt : fallback.prompt
+  const context = entry.context
+  if (!context) {
+    return {
+      prompt,
+      cursor: entry.cursor,
       context: {
-        activeTab: boolean
-        items: (ContextItem & { key: string })[]
-      }
-    }>({
-      prompt: clonePrompt(DEFAULT_PROMPT),
-      cursor: undefined,
-      context: {
-        activeTab: true,
-        items: [],
+        activeTab: fallback.context.activeTab,
+        items: fallback.context.items,
       },
+    }
+  }
+  const items = Array.isArray(context.items) ? context.items : fallback.context.items
+  const activeTab =
+    typeof context.activeTab === "boolean" ? context.activeTab : fallback.context.activeTab
+  return {
+    prompt,
+    cursor: entry.cursor,
+    context: {
+      activeTab,
+      items,
+    },
+  }
+}
+
+function keyForItem(item: ContextItem) {
+  if (item.type !== "file") return item.type
+  const start = item.selection?.startLine
+  const end = item.selection?.endLine
+  return `${item.type}:${item.path}:${start}:${end}`
+}
+
+function createPromptContext(paneId?: string | Accessor<string | undefined>) {
+  const params = useParams()
+  const getPaneId = typeof paneId === "function" ? paneId : () => paneId
+
+  const [paneStore, setPaneStore] = createStore<PromptStore>({
+    entries: {},
+  })
+
+  const key = createMemo(() => `${params.dir}/prompt${params.id ? "/" + params.id : ""}.v1`)
+  const [store, setStore, _, ready] = persisted(
+    "prompt.v2",
+    createStore<PromptStore>({
+      entries: {},
     }),
   )
 
-  function keyForItem(item: ContextItem) {
-    if (item.type !== "file") return item.type
-    const start = item.selection?.startLine
-    const end = item.selection?.endLine
-    return `${item.type}:${item.path}:${start}:${end}`
+  const currentEntry = createMemo(() => {
+    const pane = getPaneId()
+    if (pane) {
+      return normalizeEntry(paneStore.entries[pane])
+    }
+    return normalizeEntry(store.entries[key()])
+  })
+
+  const updateEntry = (updater: (entry: PromptEntry) => PromptEntry) => {
+    const pane = getPaneId()
+    if (pane) {
+      const base = normalizeEntry(paneStore.entries[pane])
+      setPaneStore("entries", pane, updater(base))
+      return
+    }
+    const next = updater(currentEntry())
+    setStore("entries", key(), next)
   }
 
+  const isReady = () => {
+    if (getPaneId()) return true
+    return ready()
+  }
+
+  return createPromptMethods(() => currentEntry(), updateEntry, isReady)
+}
+
+function createPromptMethods(
+  getEntry: () => PromptEntry,
+  updateEntry: (updater: (entry: PromptEntry) => PromptEntry) => void,
+  ready: () => boolean,
+) {
+  const currentEntry = createMemo(() => getEntry())
+  const currentPrompt = createMemo(() => currentEntry().prompt)
   return {
     ready,
-    current: createMemo(() => store.prompt),
-    cursor: createMemo(() => store.cursor),
-    dirty: createMemo(() => !isPromptEqual(store.prompt, DEFAULT_PROMPT)),
+    current: createMemo(() => currentPrompt()),
+    cursor: createMemo(() => currentEntry().cursor),
+    dirty: createMemo(() => !isPromptEqual(currentPrompt(), DEFAULT_PROMPT)),
     context: {
-      activeTab: createMemo(() => store.context.activeTab),
-      items: createMemo(() => store.context.items),
+      activeTab: createMemo(() => currentEntry().context.activeTab),
+      items: createMemo(() => currentEntry().context.items),
       addActive() {
-        setStore("context", "activeTab", true)
+        updateEntry((entry) => ({
+          ...entry,
+          context: { ...entry.context, activeTab: true },
+        }))
       },
       removeActive() {
-        setStore("context", "activeTab", false)
+        updateEntry((entry) => ({
+          ...entry,
+          context: { ...entry.context, activeTab: false },
+        }))
       },
       add(item: ContextItem) {
         const key = keyForItem(item)
-        if (store.context.items.find((x) => x.key === key)) return
-        setStore("context", "items", (items) => [...items, { key, ...item }])
+        updateEntry((entry) => {
+          if (entry.context.items.find((x) => x.key === key)) return entry
+          return {
+            ...entry,
+            context: {
+              ...entry.context,
+              items: [...entry.context.items, { key, ...item }],
+            },
+          }
+        })
       },
       remove(key: string) {
-        setStore("context", "items", (items) => items.filter((x) => x.key !== key))
+        updateEntry((entry) => ({
+          ...entry,
+          context: {
+            ...entry.context,
+            items: entry.context.items.filter((x) => x.key !== key),
+          },
+        }))
       },
     },
     set(prompt: Prompt, cursorPosition?: number) {
       const next = clonePrompt(prompt)
       batch(() => {
-        setStore("prompt", next)
-        if (cursorPosition !== undefined) setStore("cursor", cursorPosition)
+        updateEntry((entry) => ({
+          ...entry,
+          prompt: next,
+          cursor: cursorPosition !== undefined ? cursorPosition : entry.cursor,
+        }))
       })
     },
     reset() {
       batch(() => {
-        setStore("prompt", clonePrompt(DEFAULT_PROMPT))
-        setStore("cursor", 0)
+        updateEntry((entry) => ({
+          ...entry,
+          prompt: clonePrompt(DEFAULT_PROMPT),
+          cursor: 0,
+        }))
       })
     },
   }
 }
-
-export const { use: usePrompt, provider: PromptProvider } = createSimpleContext({
-  name: "Prompt",
-  gate: false,
-  init: () => {
-    const params = useParams()
-    const cache = new Map<string, PromptCacheEntry>()
-
-    const disposeAll = () => {
-      for (const entry of cache.values()) {
-        entry.dispose()
-      }
-      cache.clear()
-    }
-
-    onCleanup(disposeAll)
-
-    const prune = () => {
-      while (cache.size > MAX_PROMPT_SESSIONS) {
-        const first = cache.keys().next().value
-        if (!first) return
-        const entry = cache.get(first)
-        entry?.dispose()
-        cache.delete(first)
-      }
-    }
-
-    const load = (dir: string, id: string | undefined) => {
-      const key = `${dir}:${id ?? WORKSPACE_KEY}`
-      const existing = cache.get(key)
-      if (existing) {
-        cache.delete(key)
-        cache.set(key, existing)
-        return existing.value
-      }
-
-      const entry = createRoot((dispose) => ({
-        value: createPromptSession(dir, id),
-        dispose,
-      }))
-
-      cache.set(key, entry)
-      prune()
-      return entry.value
-    }
-
-    const session = createMemo(() => load(params.dir!, params.id))
-
-    return {
-      ready: () => session().ready(),
-      current: () => session().current(),
-      cursor: () => session().cursor(),
-      dirty: () => session().dirty(),
-      context: {
-        activeTab: () => session().context.activeTab(),
-        items: () => session().context.items(),
-        addActive: () => session().context.addActive(),
-        removeActive: () => session().context.removeActive(),
-        add: (item: ContextItem) => session().context.add(item),
-        remove: (key: string) => session().context.remove(key),
-      },
-      set: (prompt: Prompt, cursorPosition?: number) => session().set(prompt, cursorPosition),
-      reset: () => session().reset(),
-    }
-  },
-})

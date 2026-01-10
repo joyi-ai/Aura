@@ -1,9 +1,9 @@
-import { createStore, produce } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createRoot, onCleanup } from "solid-js"
+import { batch, createMemo, type Accessor } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { useSDK } from "./sdk"
-import { Persist, persisted } from "@/utils/persist"
+import { persisted } from "@/utils/persist"
 
 export type LocalPTY = {
   id: string
@@ -14,54 +14,117 @@ export type LocalPTY = {
   scrollY?: number
 }
 
-const WORKSPACE_KEY = "__workspace__"
-const MAX_TERMINAL_SESSIONS = 20
+export const { use: useTerminal, provider: TerminalProvider } = createSimpleContext<
+  ReturnType<typeof createTerminalContext>,
+  { paneId?: string }
+>({
+  name: "Terminal",
+  init: (props) => createTerminalContext(() => props?.paneId),
+})
 
-type TerminalSession = ReturnType<typeof createTerminalSession>
-
-type TerminalCacheEntry = {
-  value: TerminalSession
-  dispose: VoidFunction
+type TerminalEntry = {
+  active?: string
+  all: LocalPTY[]
 }
 
-function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, id: string | undefined) {
-  const legacy = `${dir}/terminal${id ? "/" + id : ""}.v1`
+type TerminalStore = {
+  entries: Record<string, TerminalEntry>
+}
 
+function createDefaultEntry(): TerminalEntry {
+  return { all: [] }
+}
+
+function createTerminalContext(paneId?: string | Accessor<string | undefined>) {
+  const sdk = useSDK()
+  const params = useParams()
+  const getPaneId = typeof paneId === "function" ? paneId : () => paneId
+
+  // For pane-based terminals, don't persist (paneIds are random and would cause orphaned entries)
+  // For single session view, persist by directory/session
+  const [paneStore, setPaneStore] = createStore<TerminalStore>({
+    entries: {},
+  })
+
+  const key = createMemo(() => `${params.dir}/terminal${params.id ? "/" + params.id : ""}.v1`)
   const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "terminal", [legacy]),
-    createStore<{
-      active?: string
-      all: LocalPTY[]
-    }>({
-      all: [],
+    "terminal.v2",
+    createStore<TerminalStore>({
+      entries: {},
     }),
   )
 
+  const currentEntry = createMemo(() => {
+    const pane = getPaneId()
+    if (pane) {
+      return paneStore.entries[pane] ?? createDefaultEntry()
+    }
+    return store.entries[key()] ?? createDefaultEntry()
+  })
+
+  const updateEntry = (updater: (entry: TerminalEntry) => TerminalEntry, targetKey?: string) => {
+    const pane = getPaneId()
+    if (pane) {
+      const keyToUse = targetKey ?? pane
+      const base = paneStore.entries[keyToUse] ?? createDefaultEntry()
+      setPaneStore("entries", keyToUse, updater(base))
+      return
+    }
+    const keyToUse = targetKey ?? key()
+    const base = store.entries[keyToUse] ?? createDefaultEntry()
+    setStore("entries", keyToUse, updater(base))
+  }
+
+  const isReady = () => {
+    if (getPaneId()) return true
+    return ready()
+  }
+
+  return createTerminalMethods(sdk, () => currentEntry(), updateEntry, isReady, () => getPaneId() ?? key())
+}
+
+function createTerminalMethods(
+  sdk: ReturnType<typeof useSDK>,
+  getEntry: () => TerminalEntry,
+  updateEntry: (updater: (entry: TerminalEntry) => TerminalEntry, targetKey?: string) => void,
+  ready: () => boolean,
+  getKey: () => string,
+) {
   return {
     ready,
-    all: createMemo(() => Object.values(store.all)),
-    active: createMemo(() => store.active),
+    all: createMemo(() => getEntry().all),
+    active: createMemo(() => getEntry().active),
     new() {
+      const targetKey = getKey()
       sdk.client.pty
-        .create({ title: `Terminal ${store.all.length + 1}` })
+        .create({ title: `Terminal ${getEntry().all.length + 1}` })
         .then((pty) => {
           const id = pty.data?.id
           if (!id) return
-          setStore("all", [
-            ...store.all,
-            {
-              id,
-              title: pty.data?.title ?? "Terminal",
-            },
-          ])
-          setStore("active", id)
+          updateEntry(
+            (entry) => ({
+              ...entry,
+              all: [
+                ...entry.all,
+                {
+                  id,
+                  title: pty.data?.title ?? "Terminal",
+                },
+              ],
+              active: id,
+            }),
+            targetKey,
+          )
         })
         .catch((e) => {
           console.error("Failed to create terminal", e)
         })
     },
     update(pty: Partial<LocalPTY> & { id: string }) {
-      setStore("all", (x) => x.map((x) => (x.id === pty.id ? { ...x, ...pty } : x)))
+      updateEntry((entry) => ({
+        ...entry,
+        all: entry.all.map((x) => (x.id === pty.id ? { ...x, ...pty } : x)),
+      }))
       sdk.client.pty
         .update({
           ptyID: pty.id,
@@ -73,8 +136,10 @@ function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, id: 
         })
     },
     async clone(id: string) {
-      const index = store.all.findIndex((x) => x.id === id)
-      const pty = store.all[index]
+      const targetKey = getKey()
+      const entry = getEntry()
+      const index = entry.all.findIndex((x) => x.id === id)
+      const pty = entry.all[index]
       if (!pty) return
       const clone = await sdk.client.pty
         .create({
@@ -85,104 +150,59 @@ function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, id: 
           return undefined
         })
       if (!clone?.data) return
-      setStore("all", index, {
-        ...pty,
-        ...clone.data,
-      })
-      if (store.active === pty.id) {
-        setStore("active", clone.data.id)
-      }
+      updateEntry(
+        (entry) => {
+          const nextAll = entry.all.slice()
+          nextAll[index] = {
+            ...pty,
+            ...clone.data,
+          }
+          return {
+            ...entry,
+            all: nextAll,
+            active: entry.active === pty.id ? clone.data.id : entry.active,
+          }
+        },
+        targetKey,
+      )
     },
     open(id: string) {
-      setStore("active", id)
+      updateEntry((entry) => ({ ...entry, active: id }))
     },
     async close(id: string) {
       batch(() => {
-        setStore(
-          "all",
-          store.all.filter((x) => x.id !== id),
-        )
-        if (store.active === id) {
-          const index = store.all.findIndex((f) => f.id === id)
-          const previous = store.all[Math.max(0, index - 1)]
-          setStore("active", previous?.id)
-        }
+        updateEntry((entry) => {
+          const nextAll = entry.all.filter((x) => x.id !== id)
+          let nextActive = entry.active
+          if (entry.active === id) {
+            const index = entry.all.findIndex((f) => f.id === id)
+            const previous = entry.all[Math.max(0, index - 1)]
+            nextActive = previous?.id
+          }
+          return {
+            ...entry,
+            all: nextAll,
+            active: nextActive,
+          }
+        })
       })
       await sdk.client.pty.remove({ ptyID: id }).catch((e) => {
         console.error("Failed to close terminal", e)
       })
     },
     move(id: string, to: number) {
-      const index = store.all.findIndex((f) => f.id === id)
-      if (index === -1) return
-      setStore(
-        "all",
-        produce((all) => {
-          all.splice(to, 0, all.splice(index, 1)[0])
-        }),
-      )
+      updateEntry((entry) => {
+        const index = entry.all.findIndex((f) => f.id === id)
+        if (index === -1) return entry
+        const clamped = Math.max(0, Math.min(to, entry.all.length - 1))
+        if (clamped === index) return entry
+        const nextAll = entry.all.slice()
+        nextAll.splice(clamped, 0, nextAll.splice(index, 1)[0])
+        return {
+          ...entry,
+          all: nextAll,
+        }
+      })
     },
   }
 }
-
-export const { use: useTerminal, provider: TerminalProvider } = createSimpleContext({
-  name: "Terminal",
-  gate: false,
-  init: () => {
-    const sdk = useSDK()
-    const params = useParams()
-    const cache = new Map<string, TerminalCacheEntry>()
-
-    const disposeAll = () => {
-      for (const entry of cache.values()) {
-        entry.dispose()
-      }
-      cache.clear()
-    }
-
-    onCleanup(disposeAll)
-
-    const prune = () => {
-      while (cache.size > MAX_TERMINAL_SESSIONS) {
-        const first = cache.keys().next().value
-        if (!first) return
-        const entry = cache.get(first)
-        entry?.dispose()
-        cache.delete(first)
-      }
-    }
-
-    const load = (dir: string, id: string | undefined) => {
-      const key = `${dir}:${id ?? WORKSPACE_KEY}`
-      const existing = cache.get(key)
-      if (existing) {
-        cache.delete(key)
-        cache.set(key, existing)
-        return existing.value
-      }
-
-      const entry = createRoot((dispose) => ({
-        value: createTerminalSession(sdk, dir, id),
-        dispose,
-      }))
-
-      cache.set(key, entry)
-      prune()
-      return entry.value
-    }
-
-    const session = createMemo(() => load(params.dir!, params.id))
-
-    return {
-      ready: () => session().ready(),
-      all: () => session().all(),
-      active: () => session().active(),
-      new: () => session().new(),
-      update: (pty: Partial<LocalPTY> & { id: string }) => session().update(pty),
-      clone: (id: string) => session().clone(id),
-      open: (id: string) => session().open(id),
-      close: (id: string) => session().close(id),
-      move: (id: string, to: number) => session().move(id, to),
-    }
-  },
-})

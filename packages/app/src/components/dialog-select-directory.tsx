@@ -76,8 +76,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
 
   function resolve(rel: string) {
     const absolute = join(root(), rel)
-    props.onSelect(props.multiple ? [absolute] : absolute)
     dialog.close()
+    queueMicrotask(() => {
+      props.onSelect(props.multiple ? [absolute] : absolute)
+    })
   }
 
   return (

@@ -34,7 +34,7 @@ describe("session.started event", () => {
         expect(receivedInfo?.directory).toBe(session.directory)
         expect(receivedInfo?.title).toBe(session.title)
 
-        await Session.remove(session.id)
+        await Session.remove({ sessionID: session.id })
       },
     })
   })
@@ -64,7 +64,7 @@ describe("session.started event", () => {
         expect(events).toContain("updated")
         expect(events.indexOf("started")).toBeLessThan(events.indexOf("updated"))
 
-        await Session.remove(session.id)
+        await Session.remove({ sessionID: session.id })
       },
     })
   })

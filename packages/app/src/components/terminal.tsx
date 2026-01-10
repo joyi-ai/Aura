@@ -190,6 +190,7 @@ export const Terminal = (props: TerminalProps) => {
       if (local.pty.rows && local.pty.cols) {
         t.resize(local.pty.cols, local.pty.rows)
       }
+      t.reset()
       t.write(local.pty.buffer, () => {
         if (local.pty.scrollY) {
           t.scrollToLine(local.pty.scrollY)

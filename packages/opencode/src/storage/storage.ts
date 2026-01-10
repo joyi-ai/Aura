@@ -138,6 +138,74 @@ export namespace Storage {
         )
       }
     },
+    // Migration 3: Consolidate parts inline with messages
+    async (dir) => {
+      log.info("migrating parts to inline format")
+      const messageGlob = new Bun.Glob("**/*.json")
+      const messagesDir = path.join(dir, "message")
+
+      // Check if message directory exists
+      if (!(await fs.exists(messagesDir))) {
+        log.info("no messages directory found, skipping migration")
+        return
+      }
+
+      // Find all message files
+      for await (const msgPath of messageGlob.scan({
+        cwd: messagesDir,
+        absolute: true,
+      })) {
+        const message = await Bun.file(msgPath).json().catch(() => null)
+        if (!message) continue
+
+        // Check if already migrated (has info and parts structure)
+        if (message.info && Array.isArray(message.parts)) {
+          continue
+        }
+
+        // This is old format - message is the info directly
+        const info = message
+        if (!info.id || !info.sessionID) continue
+
+        const messageID = info.id
+        const partsDir = path.join(dir, "part", messageID)
+
+        // Collect parts from separate files
+        const parts: any[] = []
+        if (await fs.exists(partsDir)) {
+          for await (const partPath of messageGlob.scan({
+            cwd: partsDir,
+            absolute: true,
+          })) {
+            const part = await Bun.file(partPath).json().catch(() => null)
+            if (part) parts.push(part)
+          }
+        }
+
+        // Sort parts by ID
+        parts.sort((a, b) => (a.id > b.id ? 1 : -1))
+
+        // Write new format
+        await Bun.write(msgPath, JSON.stringify({ info, parts }, null, 2))
+        log.info(`migrated message ${messageID} with ${parts.length} parts`)
+
+        // Remove old part files
+        if (await fs.exists(partsDir)) {
+          await fs.rm(partsDir, { recursive: true }).catch(() => {})
+        }
+      }
+
+      // Clean up empty part directories
+      const partDir = path.join(dir, "part")
+      if (await fs.exists(partDir)) {
+        const remaining = await fs.readdir(partDir).catch(() => [])
+        if (remaining.length === 0) {
+          await fs.rm(partDir, { recursive: true }).catch(() => {})
+        }
+      }
+
+      log.info("parts migration completed")
+    },
   ]
 
   const state = lazy(async () => {

@@ -6,6 +6,7 @@ import { Identifier } from "../id/id"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { MCP } from "../mcp"
+import { ClaudePlugin } from "../claude-plugin"
 
 export namespace Command {
   export const Event = {
@@ -115,6 +116,20 @@ export namespace Command {
           })
         },
         hints: prompt.arguments?.map((_, i) => `$${i + 1}`) ?? [],
+      }
+    }
+
+    // Load commands from Claude Code plugins
+    for (const cmd of await ClaudePlugin.commands()) {
+      result[cmd.fullName] = {
+        name: cmd.fullName,
+        agent: cmd.agent,
+        model: cmd.model,
+        description: cmd.description,
+        get template() {
+          return cmd.template
+        },
+        hints: hints(cmd.template),
       }
     }
 

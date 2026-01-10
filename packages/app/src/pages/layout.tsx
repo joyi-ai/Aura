@@ -14,7 +14,7 @@ import {
   type JSX,
 } from "solid-js"
 import { DateTime } from "luxon"
-import { A, useNavigate, useParams } from "@solidjs/router"
+import { A, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { useLayout, getAvatarColors, LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { base64Decode, base64Encode } from "@opencode-ai/util/encode"
@@ -28,7 +28,7 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Mark } from "@opencode-ai/ui/logo"
-import { getFilename } from "@opencode-ai/util/path"
+import { getFilename, truncateDirectoryPrefix } from "@opencode-ai/util/path"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
@@ -49,16 +49,20 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/util/binary"
 import { retry } from "@opencode-ai/util/retry"
+import { SDKProvider } from "@/context/sdk"
+import { SyncProvider } from "@/context/sync"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogEditProject } from "@/components/dialog-edit-project"
 import { DialogSelectServer } from "@/components/dialog-select-server"
+import { DialogSelectMcp } from "@/components/dialog-select-mcp"
 import { useCommand, type CommandOption } from "@/context/command"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { navStart } from "@/utils/perf"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
+import { DialogWorktreeCleanup } from "@/components/dialog-worktree-cleanup"
 import { useServer } from "@/context/server"
 
 export default function Layout(props: ParentProps) {
@@ -82,6 +86,7 @@ export default function Layout(props: ParentProps) {
   onCleanup(() => xlQuery.removeEventListener("change", handleViewportChange))
 
   const params = useParams()
+  const [searchParams] = useSearchParams()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const layout = useLayout()
@@ -101,6 +106,14 @@ export default function Layout(props: ParentProps) {
     light: "Light",
     dark: "Dark",
   }
+  const mcpDirectory = createMemo(() => {
+    if (params.dir) return base64Decode(params.dir)
+    const searchDir = searchParams.dir
+    if (searchDir) return Array.isArray(searchDir) ? searchDir[0] : searchDir
+    const first = layout.projects.list()[0]?.worktree
+    if (first) return first
+    return globalSync.data.path.directory
+  })
 
   function cycleTheme(direction = 1) {
     const ids = availableThemeEntries().map(([id]) => id)
@@ -175,14 +188,16 @@ export default function Layout(props: ParentProps) {
       const perm = e.details.properties
       if (permission.autoResponds(perm, directory)) return
 
+      const sessionKey = `${directory}:${perm.sessionID}`
       const [store] = globalSync.child(directory)
       const session = store.session.find((s) => s.id === perm.sessionID)
-      const sessionKey = `${directory}:${perm.sessionID}`
 
       const sessionTitle = session?.title ?? "New session"
       const projectName = getFilename(directory)
       const description = `${sessionTitle} in ${projectName} needs permission`
-      const href = `/${base64Encode(directory)}/session/${perm.sessionID}`
+      const href = isMultiRoute()
+        ? `/multi?session=${perm.sessionID}&dir=${encodeURIComponent(directory)}`
+        : `/${base64Encode(directory)}/session/${perm.sessionID}`
 
       const now = Date.now()
       const lastAlerted = alertedAtBySession.get(sessionKey) ?? 0
@@ -248,6 +263,37 @@ export default function Layout(props: ParentProps) {
     })
   })
 
+  function normalizeDirectory(input: string | undefined) {
+    if (!input) return ""
+    const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
+    if (!normalized) return ""
+    if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
+    return normalized.toLowerCase()
+  }
+
+  function sameDirectory(a: string | undefined, b: string | undefined) {
+    return normalizeDirectory(a) === normalizeDirectory(b)
+  }
+
+  function projectDirectories(project: LocalProject) {
+    const sandboxes = project.sandboxes ?? []
+    return [project.worktree, ...sandboxes].filter(Boolean)
+  }
+
+  function resolveSessionDirectory(sessionDirectory: string | undefined, project: LocalProject) {
+    const allowed = projectDirectories(project)
+    const match = allowed.find((dir) => sameDirectory(dir, sessionDirectory))
+    if (match) return match
+    const root = allowed[0]
+    if (root) return root
+    return globalSync.data.path.directory
+  }
+
+  function isMultiRoute() {
+    if (params.dir) return false
+    return true
+  }
+
   function sortSessions(a: Session, b: Session) {
     const now = Date.now()
     const oneMinuteAgo = now - 60 * 1000
@@ -282,7 +328,8 @@ export default function Layout(props: ParentProps) {
     const sessions = stores
       .flatMap((store) => store.session.filter((session) => session.directory === store.path.directory))
       .toSorted(sortSessions)
-    return sessions.filter((s) => !s.parentID)
+    return sessions.filter((s) => !s.parentID && !s.time?.archived)
+  }
   }
 
   const currentSessions = createMemo(() => projectSessions(currentProject()))
@@ -513,17 +560,20 @@ export default function Layout(props: ParentProps) {
     queueMicrotask(() => scrollToSession(targetSession.id))
   }
 
-  async function archiveSession(session: Session) {
+  async function archiveSession(session: Session, _removeWorktree?: boolean) {
     const [store, setStore] = globalSync.child(session.directory)
     const sessions = store.session ?? []
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
+    // TODO: worktree cleanup pending SDK regeneration
+    // For now, always archive via update without worktree handling
     await globalSDK.client.session.update({
       directory: session.directory,
       sessionID: session.id,
       time: { archived: Date.now() },
     })
+
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, session.id, (s) => s.id)
@@ -646,16 +696,53 @@ export default function Layout(props: ParentProps) {
     dialog.show(() => <DialogSelectServer />)
   }
 
+  function openMcp() {
+    const directory = mcpDirectory()
+    if (!directory) {
+      showToast({
+        variant: "error",
+        title: "Open a project",
+        description: "Open a project to manage MCP servers.",
+      })
+      return
+    }
+    dialog.show(() => (
+      <SDKProvider directory={directory}>
+        <SyncProvider>
+          <DialogSelectMcp />
+        </SyncProvider>
+      </SDKProvider>
+    ))
+  }
+
   function navigateToProject(directory: string | undefined) {
     if (!directory) return
     const lastSession = store.lastSession[directory]
+    if (isMultiRoute()) {
+      const dir = encodeURIComponent(directory)
+      const sessionParam = lastSession ? `&session=${lastSession}` : ""
+      navigate(`/multi?dir=${dir}${sessionParam}`)
+      layout.mobileSidebar.hide()
+      return
+    }
     navigate(`/${base64Encode(directory)}${lastSession ? `/session/${lastSession}` : ""}`)
     layout.mobileSidebar.hide()
   }
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
-    navigate(`/${base64Encode(session.directory)}/session/${session.id}`)
+    if (isMultiRoute()) {
+      const currentDir = params.dir ? base64Decode(params.dir) : undefined
+      const targetDir = session.directory || currentDir
+      if (!targetDir) return
+      const dir = encodeURIComponent(targetDir)
+      navigate(`/multi?session=${session.id}&dir=${dir}`)
+      layout.mobileSidebar.hide()
+      return
+    }
+    const sessionDir = session.directory ?? (params.dir ? base64Decode(params.dir) : undefined)
+    if (!sessionDir) return
+    navigate(`/${base64Encode(sessionDir)}/session/${session.id}`)
     layout.mobileSidebar.hide()
   }
 
@@ -665,11 +752,28 @@ export default function Layout(props: ParentProps) {
   }
 
   function closeProject(directory: string) {
-    const index = layout.projects.list().findIndex((x) => x.worktree === directory)
-    const next = layout.projects.list()[index + 1]
+    const projects = layout.projects.list()
+    const index = projects.findIndex((x) => x.worktree === directory)
+    const next = projects[index + 1]
+    const currentDir = params.dir ? base64Decode(params.dir) : undefined
+    const project = projects.find((x) => x.worktree === directory)
+    const sandboxes = project?.sandboxes ?? []
+    const isSandboxActive = currentDir ? sandboxes.some((sandbox) => sameDirectory(sandbox, currentDir)) : false
+    const isActive = currentDir ? sameDirectory(currentDir, directory) || isSandboxActive : false
     layout.projects.close(directory)
-    if (next) navigateToProject(next.worktree)
-    else navigate("/")
+    if (!isActive) return
+    if (next) {
+      navigateToProject(next.worktree)
+      return
+    }
+    navigate("/")
+  }
+
+  function closeProjectDeferred(directory: string) {
+    // Let the dropdown menu close before unmounting its trigger to avoid popper errors.
+    queueMicrotask(() => {
+      setTimeout(() => closeProject(directory), 0)
+    })
   }
 
   async function chooseProject() {
@@ -757,7 +861,7 @@ export default function Layout(props: ParentProps) {
     const notification = useNotification()
     const notifications = createMemo(() => notification.project.unseen(props.project.worktree))
     const hasError = createMemo(() => notifications().some((n) => n.type === "error"))
-    const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
+    const name = createMemo(() => props.project.name || truncateDirectoryPrefix(props.project.worktree))
     const mask = "radial-gradient(circle 5px at calc(100% - 2px) 2px, transparent 5px, black 5.5px)"
     const opencode = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
@@ -793,7 +897,7 @@ export default function Layout(props: ParentProps) {
   }
 
   const ProjectVisual = (props: { project: LocalProject; class?: string }): JSX.Element => {
-    const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
+    const name = createMemo(() => props.project.name || truncateDirectoryPrefix(props.project.worktree))
     const current = createMemo(() => base64Decode(params.dir ?? ""))
     return (
       <Switch>
@@ -831,11 +935,12 @@ export default function Layout(props: ParentProps) {
     project: LocalProject
     mobile?: boolean
   }): JSX.Element => {
+    const sessionDirectory = createMemo(() => resolveSessionDirectory(props.session.directory, props.project))
     const notification = useNotification()
     const updated = createMemo(() => DateTime.fromMillis(props.session.time.updated))
     const notifications = createMemo(() => notification.session.unseen(props.session.id))
     const hasError = createMemo(() => notifications().some((n) => n.type === "error"))
-    const [sessionStore] = globalSync.child(props.session.directory)
+    const [sessionStore] = globalSync.child(sessionDirectory())
     const hasPermissions = createMemo(() => {
       const permissions = sessionStore.permission?.[props.session.id] ?? []
       if (permissions.length > 0) return true
@@ -852,17 +957,36 @@ export default function Layout(props: ParentProps) {
       const status = sessionStore.session_status[props.session.id]
       return status?.type === "busy" || status?.type === "retry"
     })
+    const isActive = createMemo(() => {
+      if (!params.dir || !params.id) return false
+      if (params.id !== props.session.id) return false
+      const currentDir = base64Decode(params.dir)
+      if (!sameDirectory(currentDir, sessionDirectory())) return false
+      return true
+    })
+    const sessionHref = createMemo(() => {
+      if (isMultiRoute()) {
+        return `/multi?session=${props.session.id}&dir=${encodeURIComponent(sessionDirectory())}`
+      }
+      return `/${base64Encode(sessionDirectory())}/session/${props.session.id}`
+    })
+
     return (
       <>
         <div
           data-session-id={props.session.id}
-          class="group/session relative w-full rounded-md cursor-default transition-colors
-                 hover:bg-surface-raised-base-hover focus-within:bg-surface-raised-base-hover has-[.active]:bg-surface-raised-base-hover"
+          class="group/session relative w-full pr-2 py-1 rounded-md cursor-default transition-colors
+                 hover:bg-surface-raised-base-hover focus-within:bg-surface-raised-base-hover"
+          style={{ "padding-left": "16px" }}
+          classList={{
+            "bg-surface-raised-base-hover": isActive(),
+          }}
         >
           <Tooltip placement={props.mobile ? "bottom" : "right"} value={props.session.title} gutter={10}>
             <A
-              href={`${props.slug}/session/${props.session.id}`}
-              class="flex flex-col min-w-0 text-left w-full focus:outline-none pl-4 pr-2 py-1"
+              href={sessionHref()}
+              class="flex flex-col min-w-0 text-left w-full focus:outline-none"
+              activeClass=""
               onMouseEnter={() => prefetchSession(props.session, "high")}
               onFocus={() => prefetchSession(props.session, "high")}
             >
@@ -932,18 +1056,14 @@ export default function Layout(props: ParentProps) {
   const SortableProject = (props: { project: LocalProject; mobile?: boolean }): JSX.Element => {
     const sortable = createSortable(props.project.worktree)
     const showExpanded = createMemo(() => props.mobile || layout.sidebar.opened())
-    const defaultWorktree = createMemo(() => base64Encode(props.project.worktree))
-    const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
+    const slug = createMemo(() => base64Encode(props.project.worktree))
+    const newSessionHref = createMemo(
+      () => `/multi?dir=${encodeURIComponent(props.project.worktree)}`,
+    )
+    const name = createMemo(() => props.project.name || truncateDirectoryPrefix(props.project.worktree))
     const [store, setProjectStore] = globalSync.child(props.project.worktree)
-    const stores = createMemo(() =>
-      [props.project.worktree, ...(props.project.sandboxes ?? [])].map((dir) => globalSync.child(dir)[0]),
-    )
-    const sessions = createMemo(() =>
-      stores()
-        .flatMap((store) => store.session.filter((session) => session.directory === store.path.directory))
-        .toSorted(sortSessions),
-    )
-    const rootSessions = createMemo(() => sessions().filter((s) => !s.parentID))
+    const sessions = createMemo(() => store.session.toSorted(sortSessions))
+    const rootSessions = createMemo(() => sessions().filter((s) => !s.parentID && !s.time?.archived))
     const hasMoreSessions = createMemo(() => store.session.length >= store.limit)
     const loadMoreSessions = async () => {
       setProjectStore("limit", (limit) => limit + 5)
@@ -998,14 +1118,14 @@ export default function Layout(props: ParentProps) {
                         >
                           <DropdownMenu.ItemLabel>Edit project</DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
-                        <DropdownMenu.Item onSelect={() => closeProject(props.project.worktree)}>
+                        <DropdownMenu.Item onSelect={() => closeProjectDeferred(props.project.worktree)}>
                           <DropdownMenu.ItemLabel>Close project</DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                   </DropdownMenu>
                   <TooltipKeybind placement="top" title="New session" keybind={command.keybind("session.new")}>
-                    <IconButton as={A} href={`${defaultWorktree()}/session`} icon="plus-small" variant="ghost" />
+                    <IconButton as={A} href={newSessionHref()} icon="plus-small" variant="ghost" />
                   </TooltipKeybind>
                 </div>
               </Button>
@@ -1013,25 +1133,21 @@ export default function Layout(props: ParentProps) {
                 <nav class="hidden @[4rem]:flex w-full flex-col gap-1.5">
                   <For each={rootSessions()}>
                     {(session) => (
-                      <SessionItem
-                        session={session}
-                        slug={base64Encode(session.directory)}
-                        project={props.project}
-                        mobile={props.mobile}
-                      />
+                      <SessionItem session={session} slug={slug()} project={props.project} mobile={props.mobile} />
                     )}
                   </For>
                   <Show when={rootSessions().length === 0}>
                     <div
                       class="group/session relative w-full pl-4 pr-2 py-1 rounded-md cursor-default transition-colors
-                             hover:bg-surface-raised-base-hover focus-within:bg-surface-raised-base-hover has-[.active]:bg-surface-raised-base-hover"
+                             hover:bg-surface-raised-base-hover focus-within:bg-surface-raised-base-hover"
                     >
                       <div class="flex items-center self-stretch w-full">
                         <div class="flex-1 min-w-0">
                           <Tooltip placement={props.mobile ? "bottom" : "right"} value="New session">
                             <A
-                              href={`${defaultWorktree()}/session`}
+                              href={newSessionHref()}
                               class="flex flex-col gap-1 min-w-0 text-left w-full focus:outline-none"
+                              activeClass=""
                             >
                               <div class="flex items-center self-stretch gap-6 justify-between">
                                 <span class="text-14-regular text-text-strong overflow-hidden text-ellipsis truncate">
@@ -1086,85 +1202,97 @@ export default function Layout(props: ParentProps) {
   const SidebarContent = (sidebarProps: { mobile?: boolean }) => {
     const expanded = () => sidebarProps.mobile || layout.sidebar.opened()
     return (
-      <div class="flex flex-col self-stretch h-full items-center justify-between overflow-hidden min-h-0">
-        <div class="flex flex-col items-start self-stretch gap-4 min-h-0">
+      <>
+        <div class="flex flex-col items-start self-stretch gap-4 p-2 min-h-0 overflow-hidden">
+          <Show when={!sidebarProps.mobile}>
+            <A href="/" class="shrink-0 h-8 flex items-center justify-start px-2" data-tauri-drag-region>
+              <Mark class="shrink-0" />
+            </A>
+          </Show>
+          <Show when={!sidebarProps.mobile}>
+            <TooltipKeybind
+              class="shrink-0"
+              placement="right"
+              title="Toggle sidebar"
+              keybind={command.keybind("sidebar.toggle")}
+              inactive={expanded()}
+            >
+              <Button
+                variant="ghost"
+                size="large"
+                class="group/sidebar-toggle shrink-0 w-full text-left justify-start rounded-lg px-2"
+                onClick={layout.sidebar.toggle}
+              >
+                <div class="relative -ml-px flex items-center justify-center size-4 [&>*]:absolute [&>*]:inset-0">
+                  <Icon
+                    name={layout.sidebar.opened() ? "layout-left" : "layout-right"}
+                    size="small"
+                    class="group-hover/sidebar-toggle:hidden"
+                  />
+                  <Icon
+                    name={layout.sidebar.opened() ? "layout-left-partial" : "layout-right-partial"}
+                    size="small"
+                    class="hidden group-hover/sidebar-toggle:inline-block"
+                  />
+                  <Icon
+                    name={layout.sidebar.opened() ? "layout-left-full" : "layout-right-full"}
+                    size="small"
+                    class="hidden group-active/sidebar-toggle:inline-block"
+                  />
+                </div>
+                <Show when={layout.sidebar.opened()}>
+                  <div class="hidden group-hover/sidebar-toggle:block group-active/sidebar-toggle:block text-text-base">
+                    Toggle sidebar
+                  </div>
+                </Show>
+              </Button>
+            </TooltipKeybind>
+          </Show>
           <Show when={!sidebarProps.mobile}>
             <div
-              classList={{
-                "border-b border-border-weak-base w-full h-12 ml-px flex items-center pl-1.75 shrink-0": true,
-                "justify-start": expanded(),
-              }}
+              class="shrink-0 w-full flex gap-1 px-1"
+              classList={{ "flex-row": expanded(), "flex-col": !expanded(), "items-center": true }}
             >
-              <A href="/" class="shrink-0 h-8 flex items-center justify-start px-2 w-full" data-tauri-drag-region>
-                <Mark class="shrink-0" />
-              </A>
+              <Tooltip placement="right" value="Grid layout" inactive={expanded()}>
+                <IconButton
+                  icon="dot-grid"
+                  variant={layout.multiPane.view() === "grid" ? "secondary" : "ghost"}
+                  onClick={() => layout.multiPane.setView("grid")}
+                />
+              </Tooltip>
+              <Tooltip placement="right" value="Kanban layout" inactive={expanded()}>
+                <IconButton
+                  icon="bullet-list"
+                  variant={layout.multiPane.view() === "kanban" ? "secondary" : "ghost"}
+                  onClick={() => layout.multiPane.setView("kanban")}
+                />
+              </Tooltip>
             </div>
           </Show>
-          <div class="flex flex-col items-start self-stretch gap-4 px-2 overflow-hidden min-h-0">
-            <Show when={!sidebarProps.mobile}>
-              <TooltipKeybind
-                class="shrink-0"
-                placement="right"
-                title="Toggle sidebar"
-                keybind={command.keybind("sidebar.toggle")}
-                inactive={expanded()}
-              >
-                <Button
-                  variant="ghost"
-                  size="large"
-                  class="group/sidebar-toggle shrink-0 w-full text-left justify-start rounded-lg px-2"
-                  onClick={layout.sidebar.toggle}
-                >
-                  <div class="relative -ml-px flex items-center justify-center size-4 [&>*]:absolute [&>*]:inset-0">
-                    <Icon
-                      name={layout.sidebar.opened() ? "layout-left" : "layout-right"}
-                      size="small"
-                      class="group-hover/sidebar-toggle:hidden"
-                    />
-                    <Icon
-                      name={layout.sidebar.opened() ? "layout-left-partial" : "layout-right-partial"}
-                      size="small"
-                      class="hidden group-hover/sidebar-toggle:inline-block"
-                    />
-                    <Icon
-                      name={layout.sidebar.opened() ? "layout-left-full" : "layout-right-full"}
-                      size="small"
-                      class="hidden group-active/sidebar-toggle:inline-block"
-                    />
-                  </div>
-                  <Show when={layout.sidebar.opened()}>
-                    <div class="hidden group-hover/sidebar-toggle:block group-active/sidebar-toggle:block text-text-base">
-                      Toggle sidebar
-                    </div>
-                  </Show>
-                </Button>
-              </TooltipKeybind>
-            </Show>
-            <DragDropProvider
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onDragOver={handleDragOver}
-              collisionDetector={closestCenter}
+          <DragDropProvider
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            collisionDetector={closestCenter}
+          >
+            <DragDropSensors />
+            <ConstrainDragXAxis />
+            <div
+              ref={(el) => {
+                if (!sidebarProps.mobile) scrollContainerRef = el
+              }}
+              class="w-full min-w-8 flex flex-col gap-2 min-h-0 overflow-y-auto no-scrollbar"
             >
-              <DragDropSensors />
-              <ConstrainDragXAxis />
-              <div
-                ref={(el) => {
-                  if (!sidebarProps.mobile) scrollContainerRef = el
-                }}
-                class="w-full min-w-8 flex flex-col gap-2 min-h-0 overflow-y-auto no-scrollbar"
-              >
-                <SortableProvider ids={layout.projects.list().map((p) => p.worktree)}>
-                  <For each={layout.projects.list()}>
-                    {(project) => <SortableProject project={project} mobile={sidebarProps.mobile} />}
-                  </For>
-                </SortableProvider>
-              </div>
-              <DragOverlay>
-                <ProjectDragOverlay />
-              </DragOverlay>
-            </DragDropProvider>
-          </div>
+              <SortableProvider ids={layout.projects.list().map((p) => p.worktree)}>
+                <For each={layout.projects.list()}>
+                  {(project) => <SortableProject project={project} mobile={sidebarProps.mobile} />}
+                </For>
+              </SortableProvider>
+            </div>
+            <DragOverlay>
+              <ProjectDragOverlay />
+            </DragOverlay>
+          </DragDropProvider>
         </div>
         <div class="flex flex-col gap-1.5 self-stretch items-start shrink-0 px-2 py-3">
           <Switch>
@@ -1223,6 +1351,29 @@ export default function Layout(props: ParentProps) {
               <Show when={expanded()}>Open project</Show>
             </Button>
           </Tooltip>
+          <Tooltip placement="right" value="MCP servers" inactive={expanded()}>
+            <Button
+              class="flex w-full text-left justify-start text-text-base stroke-[1.5px] rounded-lg px-2"
+              variant="ghost"
+              size="large"
+              icon="mcp"
+              onClick={openMcp}
+            >
+              <Show when={expanded()}>MCP servers</Show>
+            </Button>
+          </Tooltip>
+          <Tooltip placement="right" value="Marketplace" inactive={expanded()}>
+            <Button
+              as={A}
+              href="/marketplace"
+              class="flex w-full text-left justify-start text-text-base stroke-[1.5px] rounded-lg px-2"
+              variant="ghost"
+              size="large"
+              icon="code-lines"
+            >
+              <Show when={expanded()}>Marketplace</Show>
+            </Button>
+          </Tooltip>
           <Tooltip placement="right" value="Share feedback" inactive={expanded()}>
             <Button
               as={"a"}
@@ -1237,7 +1388,7 @@ export default function Layout(props: ParentProps) {
             </Button>
           </Tooltip>
         </div>
-      </div>
+      </>
     )
   }
 

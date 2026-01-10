@@ -36,6 +36,8 @@ import { createTogetherAI } from "@ai-sdk/togetherai"
 import { createPerplexity } from "@ai-sdk/perplexity"
 import { createVercel } from "@ai-sdk/vercel"
 import { ProviderTransform } from "./transform"
+import { ClaudeAgent } from "./claude-agent"
+import { CodexProvider } from "./codex"
 
 export namespace Provider {
   const log = Log.create({ service: "provider" })
@@ -642,6 +644,29 @@ export namespace Provider {
       }
     }
 
+    // Add Claude Agent provider (uses Anthropic Agent SDK)
+    database["claude-agent"] = ClaudeAgent.PROVIDER
+    mergeProvider("claude-agent", { source: "custom" })
+
+    // Always include Codex provider in the list (may still require login to use).
+    mergeProvider("codex", { source: "custom" })
+
+    const codexAccount = await CodexProvider.account()
+    const codexReady = codexAccount
+      ? codexAccount.requiresOpenaiAuth === false || codexAccount.account !== undefined
+      : false
+    if (codexReady) {
+      const codexModels = await CodexProvider.listModels()
+      if (Object.keys(codexModels).length > 0) {
+        mergeProvider("codex", {
+          source: "custom",
+          models: codexModels,
+        })
+        const codexProvider = providers["codex"]
+        if (codexProvider) codexProvider.models = codexModels
+      }
+    }
+
     function mergeProvider(providerID: string, provider: Partial<Info>) {
       const existing = providers[providerID]
       if (existing) {
@@ -867,6 +892,11 @@ export namespace Provider {
             pickBy(merged, (v) => !v.disabled),
             (v) => omit(v, ["disabled"]),
           )
+        }
+
+        if (!model.variants || Object.keys(model.variants).length === 0) {
+          const fallback = ProviderTransform.variants(model)
+          if (Object.keys(fallback).length > 0) model.variants = fallback
         }
       }
 
@@ -1097,9 +1127,19 @@ export namespace Provider {
     const cfg = await Config.get()
     if (cfg.model) return parseModel(cfg.model)
 
-    const provider = await list()
-      .then((val) => Object.values(val))
-      .then((x) => x.find((p) => !cfg.provider || Object.keys(cfg.provider).includes(p.id)))
+    const providers = await list()
+
+    // Prefer Claude Code if available (default maps to opus)
+    if (providers["claude-agent"]) {
+      return {
+        providerID: "claude-agent",
+        modelID: "default",
+      }
+    }
+
+    const provider = Object.values(providers).find(
+      (p) => !cfg.provider || Object.keys(cfg.provider).includes(p.id),
+    )
     if (!provider) throw new Error("no providers found")
     const [model] = sort(Object.values(provider.models))
     if (!model) throw new Error("no models found")

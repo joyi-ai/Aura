@@ -19,6 +19,7 @@ import { BunProc } from "@/bun"
 import { Installation } from "@/installation"
 import { ConfigMarkdown } from "./markdown"
 import { existsSync } from "fs"
+import { McpSync } from "@/mcp/sync"
 
 export namespace Config {
   const log = Log.create({ service: "config" })
@@ -86,6 +87,7 @@ export namespace Config {
 
     result.agent = result.agent || {}
     result.mode = result.mode || {}
+    result.modes = result.modes || {}
     result.plugin = result.plugin || []
 
     const directories = [
@@ -119,6 +121,7 @@ export namespace Config {
           // to satisfy the type checker
           result.agent ??= {}
           result.mode ??= {}
+          result.modes ??= {}
           result.plugin ??= []
         }
       }
@@ -585,7 +588,7 @@ export namespace Config {
       }
 
       // Convert legacy tools config to permissions
-      const permission: Permission = {}
+      const permission: Permission = { ...agent.permission }
       for (const [tool, enabled] of Object.entries(agent.tools ?? {})) {
         const action = enabled ? "allow" : "deny"
         // write, edit, patch, multiedit all map to edit permission
@@ -595,7 +598,6 @@ export namespace Config {
           permission[tool] = action
         }
       }
-      Object.assign(permission, agent.permission)
 
       // Convert legacy maxSteps to steps
       const steps = agent.steps ?? agent.maxSteps
@@ -610,6 +612,30 @@ export namespace Config {
       ref: "AgentConfig",
     })
   export type Agent = z.infer<typeof Agent>
+
+  export const Mode = z
+    .object({
+      id: z.string().describe("Mode identifier"),
+      name: z.string().describe("Mode display name"),
+      description: z.string().optional(),
+      icon: z.string().optional().describe("Icon name for UI display"),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/, "Invalid hex color format")
+        .optional()
+        .describe("Hex color code for the mode (e.g., #FF5733)"),
+      provider: z.string().optional().describe("Provider override for this mode"),
+      default_agent: z.string().optional().describe("Default agent to use in this mode"),
+      allowed_agents: z.array(z.string()).optional().describe("Allowlist of agent names for this mode"),
+      disabled_agents: z.array(z.string()).optional().describe("Blocklist of agent names for this mode"),
+      requires_plugins: z.array(z.string()).optional().describe("Plugins required for this mode"),
+      overrides: z.record(z.string(), z.any()).optional().describe("Mode-specific overrides"),
+    })
+    .catchall(z.any())
+    .meta({
+      ref: "ModeConfig",
+    })
+  export type Mode = z.infer<typeof Mode>
 
   export const Keybinds = z
     .object({
@@ -661,7 +687,7 @@ export namespace Config {
       command_list: z.string().optional().default("ctrl+p").describe("List available commands"),
       agent_list: z.string().optional().default("<leader>a").describe("List agents"),
       agent_cycle: z.string().optional().default("tab").describe("Next agent"),
-      agent_cycle_reverse: z.string().optional().default("shift+tab").describe("Previous agent"),
+      agent_cycle_reverse: z.string().optional().default("shift+tab").describe("Next mode"),
       variant_cycle: z.string().optional().default("ctrl+t").describe("Cycle model variants"),
       input_clear: z.string().optional().default("ctrl+c").describe("Clear input field"),
       input_paste: z.string().optional().default("ctrl+v").describe("Paste from clipboard"),
@@ -861,6 +887,16 @@ export namespace Config {
         .optional(),
       plugin: z.string().array().optional(),
       snapshot: z.boolean().optional(),
+      worktree: z
+        .object({
+          enabled: z.boolean().default(false).describe("Enable git worktree isolation for sessions"),
+          cleanup: z
+            .enum(["ask", "always", "never"])
+            .default("ask")
+            .describe("How to handle worktree cleanup when session is deleted"),
+        })
+        .optional()
+        .describe("Git worktree configuration for session isolation"),
       share: z
         .enum(["manual", "auto", "disabled"])
         .optional()
@@ -921,6 +957,10 @@ export namespace Config {
         .catchall(Agent)
         .optional()
         .describe("Agent configuration, see https://opencode.ai/docs/agent"),
+      modes: z
+        .record(z.string(), Mode)
+        .optional()
+        .describe("Mode configuration for the app UI"),
       provider: z
         .record(z.string(), Provider)
         .optional()
@@ -1062,6 +1102,9 @@ export namespace Config {
       mergeDeep(await loadFile(path.join(Global.Path.config, "config.json"))),
       mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.json"))),
       mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
+      // Also check Tauri config dir (where oh-my-opencode installer writes for desktop)
+      mergeDeep(Global.Path.tauriConfig ? await loadFile(path.join(Global.Path.tauriConfig, "opencode.json")) : {}),
+      mergeDeep(Global.Path.tauriConfig ? await loadFile(path.join(Global.Path.tauriConfig, "opencode.jsonc")) : {}),
     )
 
     await import(path.join(Global.Path.config, "config"), {
@@ -1216,7 +1259,12 @@ export namespace Config {
   export async function update(config: Info) {
     const filepath = path.join(Instance.directory, "config.json")
     const existing = await loadFile(filepath)
-    await Bun.write(filepath, JSON.stringify(mergeDeep(existing, config), null, 2))
+    const effective = mergeDeep(await get(), config)
+    const next = mergeDeep(existing, config)
+    await Bun.write(filepath, JSON.stringify(next, null, 2))
+    await McpSync.apply(effective.mcp, Instance.directory).catch((error) => {
+      log.warn("failed to sync mcp settings", { error: error instanceof Error ? error.message : String(error) })
+    })
     await Instance.dispose()
   }
 

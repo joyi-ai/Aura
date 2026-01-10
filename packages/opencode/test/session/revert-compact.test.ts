@@ -184,7 +184,7 @@ describe("revert + compact workflow", () => {
         expect(sessionInfo.revert).toBeUndefined()
 
         // Clean up
-        await Session.remove(sessionID)
+        await Session.remove({ sessionID })
       },
     })
   })
@@ -278,7 +278,7 @@ describe("revert + compact workflow", () => {
         expect(messages.length).toBe(0) // All messages should be reverted
 
         // Clean up
-        await Session.remove(sessionID)
+        await Session.remove({ sessionID })
       },
     })
   })

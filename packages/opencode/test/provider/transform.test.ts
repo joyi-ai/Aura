@@ -38,27 +38,27 @@ describe("ProviderTransform.options - setCacheKey", () => {
     headers: {},
   } as any
 
-  test("should set promptCacheKey when providerOptions.setCacheKey is true", () => {
-    const result = ProviderTransform.options(mockModel, sessionID, { setCacheKey: true })
+  test("should set promptCacheKey when providerOptions.setCacheKey is true", async () => {
+    const result = await ProviderTransform.options(mockModel, sessionID, { setCacheKey: true })
     expect(result.promptCacheKey).toBe(sessionID)
   })
 
-  test("should not set promptCacheKey when providerOptions.setCacheKey is false", () => {
-    const result = ProviderTransform.options(mockModel, sessionID, { setCacheKey: false })
+  test("should not set promptCacheKey when providerOptions.setCacheKey is false", async () => {
+    const result = await ProviderTransform.options(mockModel, sessionID, { setCacheKey: false })
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should not set promptCacheKey when providerOptions is undefined", () => {
-    const result = ProviderTransform.options(mockModel, sessionID, undefined)
+  test("should not set promptCacheKey when providerOptions is undefined", async () => {
+    const result = await ProviderTransform.options(mockModel, sessionID, undefined)
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should not set promptCacheKey when providerOptions does not have setCacheKey", () => {
-    const result = ProviderTransform.options(mockModel, sessionID, {})
+  test("should not set promptCacheKey when providerOptions does not have setCacheKey", async () => {
+    const result = await ProviderTransform.options(mockModel, sessionID, {})
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should set promptCacheKey for openai provider regardless of setCacheKey", () => {
+  test("should set promptCacheKey for openai provider regardless of setCacheKey", async () => {
     const openaiModel = {
       ...mockModel,
       providerID: "openai",
@@ -68,7 +68,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
         npm: "@ai-sdk/openai",
       },
     }
-    const result = ProviderTransform.options(openaiModel, sessionID, {})
+    const result = await ProviderTransform.options(openaiModel, sessionID, {})
     expect(result.promptCacheKey).toBe(sessionID)
   })
 })

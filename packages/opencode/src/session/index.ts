@@ -16,12 +16,47 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
+import { Worktree } from "@/worktree"
+import { Cache } from "@/cache"
 
 import type { Provider } from "@/provider/provider"
 import { PermissionNext } from "@/permission/next"
 
 export namespace Session {
   const log = Log.create({ service: "session" })
+
+  /**
+   * Convert a cache row to Session.Info
+   */
+  export function fromCacheRow(row: Cache.SessionRow | null): Session.Info | null {
+    if (!row) return null
+    return {
+      id: row.id as `session_${string}`,
+      projectID: row.projectID,
+      directory: row.directory,
+      parentID: row.parentID as `session_${string}` | undefined,
+      title: row.title,
+      version: row.version ?? "",
+      time: {
+        created: row.created_at ?? Date.now(),
+        updated: row.updated_at ?? Date.now(),
+        archived: row.archived_at ?? undefined,
+      },
+      summary:
+        row.additions || row.deletions || row.files_changed
+          ? {
+              additions: row.additions,
+              deletions: row.deletions,
+              files: row.files_changed,
+            }
+          : undefined,
+      share: row.share_url ? { url: row.share_url } : undefined,
+      worktree:
+        row.worktree_path && row.worktree_branch
+          ? { path: row.worktree_path, branch: row.worktree_branch, cleanup: "ask" as const }
+          : undefined,
+    }
+  }
 
   const parentTitlePrefix = "New session - "
   const childTitlePrefix = "Child session - "
@@ -72,6 +107,7 @@ export namespace Session {
           diff: z.string().optional(),
         })
         .optional(),
+      worktree: Worktree.Info.optional(),
     })
     .meta({
       ref: "Session",
@@ -129,6 +165,8 @@ export namespace Session {
         parentID: Identifier.schema("session").optional(),
         title: z.string().optional(),
         permission: Info.shape.permission,
+        useWorktree: z.boolean().optional(),
+        worktreeCleanup: Worktree.CleanupMode.optional(),
       })
       .optional(),
     async (input) => {
@@ -137,6 +175,8 @@ export namespace Session {
         directory: Instance.directory,
         title: input?.title,
         permission: input?.permission,
+        useWorktree: input?.useWorktree,
+        worktreeCleanup: input?.worktreeCleanup,
       })
     },
   )
@@ -145,10 +185,14 @@ export namespace Session {
     z.object({
       sessionID: Identifier.schema("session"),
       messageID: Identifier.schema("message").optional(),
+      useWorktree: z.boolean().optional(),
+      worktreeCleanup: Worktree.CleanupMode.optional(),
     }),
     async (input) => {
       const session = await createNext({
         directory: Instance.directory,
+        useWorktree: input.useWorktree,
+        worktreeCleanup: input.worktreeCleanup,
       })
       const msgs = await messages({ sessionID: input.sessionID })
       const idMap = new Map<string, string>()
@@ -191,15 +235,37 @@ export namespace Session {
     parentID?: string
     directory: string
     permission?: PermissionNext.Ruleset
+    useWorktree?: boolean
+    worktreeCleanup?: Worktree.CleanupMode
   }) {
+    const sessionId = Identifier.descending("session", input.id)
+    let worktreeInfo: Worktree.Info | undefined
+    let sessionDirectory = input.directory
+
+    // Create worktree if requested and project is git-managed
+    if (input.useWorktree && Instance.project.vcs === "git") {
+      try {
+        worktreeInfo = await Worktree.create({
+          sessionID: sessionId,
+          cleanup: input.worktreeCleanup,
+        })
+        sessionDirectory = worktreeInfo.path
+        log.info("created worktree for session", { sessionID: sessionId, path: worktreeInfo.path })
+      } catch (err) {
+        log.warn("failed to create worktree, falling back to normal session", { error: err })
+        // Continue without worktree
+      }
+    }
+
     const result: Info = {
-      id: Identifier.descending("session", input.id),
+      id: sessionId,
       version: Installation.VERSION,
       projectID: Instance.project.id,
-      directory: input.directory,
+      directory: sessionDirectory,
       parentID: input.parentID,
       title: input.title ?? createDefaultTitle(!!input.parentID),
       permission: input.permission,
+      worktree: worktreeInfo,
       time: {
         created: Date.now(),
         updated: Date.now(),
@@ -207,6 +273,23 @@ export namespace Session {
     }
     log.info("created", result)
     await Storage.write(["session", Instance.project.id, result.id], result)
+
+    // Update cache
+    Cache.Session.upsert({
+      id: result.id,
+      projectID: result.projectID,
+      parentID: result.parentID,
+      title: result.title,
+      directory: result.directory,
+      version: result.version,
+      time: {
+        created: result.time.created,
+        updated: result.time.updated,
+        archived: result.time.archived,
+      },
+      worktree: result.worktree,
+    })
+
     Bus.publish(Event.Created, {
       info: result,
     })
@@ -228,8 +311,10 @@ export namespace Session {
   }
 
   export const get = fn(Identifier.schema("session"), async (id) => {
-    const read = await Storage.read<Info>(["session", Instance.project.id, id])
-    return read as Info
+    const project = Instance.project
+    const result = await Storage.read<Info>(["session", project.id, id])
+    if (!result) throw new Error(`Session ${id} not found`)
+    return result
   })
 
   export const getShare = fn(Identifier.schema("session"), async (id) => {
@@ -266,6 +351,31 @@ export namespace Session {
       editor(draft)
       draft.time.updated = Date.now()
     })
+
+    // Update cache
+    Cache.Session.upsert({
+      id: result.id,
+      projectID: result.projectID,
+      parentID: result.parentID,
+      title: result.title,
+      directory: result.directory,
+      version: result.version,
+      time: {
+        created: result.time.created,
+        updated: result.time.updated,
+        archived: result.time.archived,
+      },
+      summary: result.summary
+        ? {
+            additions: result.summary.additions,
+            deletions: result.summary.deletions,
+            files: result.summary.files,
+          }
+        : undefined,
+      share: result.share,
+      worktree: result.worktree,
+    })
+
     Bus.publish(Event.Updated, {
       info: result,
     })
@@ -281,11 +391,18 @@ export namespace Session {
     z.object({
       sessionID: Identifier.schema("session"),
       limit: z.number().optional(),
+      afterID: Identifier.schema("message").optional(), // Only load messages after this ID
     }),
     async (input) => {
       const result = [] as MessageV2.WithParts[]
+      let foundAfterID = !input.afterID // If no afterID, start collecting immediately
       for await (const msg of MessageV2.stream(input.sessionID)) {
         if (input.limit && result.length >= input.limit) break
+        // Skip messages until we find the afterID
+        if (!foundAfterID) {
+          if (msg.info.id === input.afterID) foundAfterID = true
+          continue
+        }
         result.push(msg)
       }
       result.reverse()
@@ -293,49 +410,119 @@ export namespace Session {
     },
   )
 
+  export const messageCount = fn(
+    z.object({
+      sessionID: Identifier.schema("session"),
+    }),
+    async (input) => {
+      return Cache.Message.count(input.sessionID)
+    },
+  )
+
   export async function* list() {
     const project = Instance.project
-    for (const item of await Storage.list(["session", project.id])) {
-      yield Storage.read<Info>(item)
+    const cached = Cache.Session.list(project.id)
+    for (const row of cached) {
+      const session = fromCacheRow(row)
+      if (session) yield session
     }
   }
 
   export const children = fn(Identifier.schema("session"), async (parentID) => {
-    const project = Instance.project
-    const result = [] as Session.Info[]
-    for (const item of await Storage.list(["session", project.id])) {
-      const session = await Storage.read<Info>(item)
-      if (session.parentID !== parentID) continue
-      result.push(session)
-    }
-    return result
+    const cached = Cache.Session.children(parentID)
+    return cached.map(fromCacheRow).filter((s): s is Session.Info => s !== null)
   })
 
-  export const remove = fn(Identifier.schema("session"), async (sessionID) => {
-    const project = Instance.project
-    try {
-      const session = await get(sessionID)
-      for (const child of await children(sessionID)) {
-        await remove(child.id)
-      }
-      await unshare(sessionID).catch(() => {})
-      for (const msg of await Storage.list(["message", sessionID])) {
-        for (const part of await Storage.list(["part", msg.at(-1)!])) {
-          await Storage.remove(part)
+  export const remove = fn(
+    z.object({
+      sessionID: Identifier.schema("session"),
+      removeWorktree: z.boolean().optional(),
+    }),
+    async (input) => {
+      const project = Instance.project
+      try {
+        const session = await get(input.sessionID)
+
+        // Collect all session IDs to delete (parent + children recursively)
+        const allSessionIDs: string[] = []
+        const allSessions: Info[] = []
+        const collectSessions = async (sid: string) => {
+          allSessionIDs.push(sid)
+          try {
+            const s = await get(sid)
+            allSessions.push(s)
+          } catch {
+            // Session might not exist, continue
+          }
+          for (const child of await children(sid)) {
+            await collectSessions(child.id)
+          }
         }
-        await Storage.remove(msg)
+        await collectSessions(input.sessionID)
+
+        // Handle worktree cleanup for all sessions
+        for (const s of allSessions) {
+          if (s.worktree) {
+            const shouldRemove = input.removeWorktree ?? s.worktree.cleanup === "always"
+            if (shouldRemove) {
+              try {
+                await Worktree.remove({
+                  path: s.worktree.path,
+                  branch: s.worktree.branch,
+                  deleteBranch: true,
+                })
+                log.info("removed worktree", { path: s.worktree.path, branch: s.worktree.branch })
+              } catch (err) {
+                log.warn("failed to remove worktree", { path: s.worktree.path, error: err })
+              }
+            } else {
+              log.info("keeping worktree", { path: s.worktree.path })
+            }
+          }
+        }
+
+        // Unshare all sessions
+        for (const sid of allSessionIDs) {
+          await unshare(sid).catch(() => {})
+        }
+
+        // Delete from cache transactionally (ACID)
+        Cache.Session.removeMany(allSessionIDs)
+
+        // Delete files (best effort, log failures)
+        for (const sid of allSessionIDs) {
+          for (const msg of await Storage.list(["message", sid])) {
+            const messageID = msg.at(-1)!
+            MessageV2.PartStore.clearCache(sid, messageID)
+            await Storage.remove(msg).catch((e) => log.error("failed to remove message", { sid, messageID, error: e }))
+          }
+          await Storage.remove(["session", project.id, sid]).catch((e) =>
+            log.error("failed to remove session file", { sid, error: e }),
+          )
+        }
+
+        Bus.publish(Event.Deleted, {
+          info: session,
+        })
+      } catch (e) {
+        log.error(e)
       }
-      await Storage.remove(["session", project.id, sessionID])
-      Bus.publish(Event.Deleted, {
-        info: session,
-      })
-    } catch (e) {
-      log.error(e)
-    }
-  })
+    },
+  )
 
   export const updateMessage = fn(MessageV2.Info, async (msg) => {
-    await Storage.write(["message", msg.sessionID, msg.id], msg)
+    // Cache message info for part store
+    MessageV2.PartStore.cacheMessageInfo(msg)
+
+    // Get current parts from cache (if any)
+    const parts = await MessageV2.PartStore.getParts(msg.sessionID, msg.id).catch(() => [])
+
+    // Write message with inline parts (new format)
+    await Storage.write(["message", msg.sessionID, msg.id], {
+      info: msg,
+      parts: parts.slice().sort((a, b) => (a.id > b.id ? 1 : -1)),
+    })
+
     Bus.publish(MessageV2.Event.Updated, {
       info: msg,
     })
@@ -348,6 +535,9 @@ export namespace Session {
       messageID: Identifier.schema("message"),
     }),
     async (input) => {
+      // Clear cache
+      MessageV2.PartStore.clearCache(input.sessionID, input.messageID)
+
       await Storage.remove(["message", input.sessionID, input.messageID])
       Bus.publish(MessageV2.Event.Removed, {
         sessionID: input.sessionID,
@@ -364,7 +554,9 @@ export namespace Session {
       partID: Identifier.schema("part"),
     }),
     async (input) => {
-      await Storage.remove(["part", input.messageID, input.partID])
+      // Remove from cache and schedule debounced flush
+      await MessageV2.PartStore.removePart(input.sessionID, input.messageID, input.partID)
+
       Bus.publish(MessageV2.Event.PartRemoved, {
         sessionID: input.sessionID,
         messageID: input.messageID,
@@ -389,13 +581,26 @@ export namespace Session {
   export const updatePart = fn(UpdatePartInput, async (input) => {
     const part = "delta" in input ? input.part : input
     const delta = "delta" in input ? input.delta : undefined
-    await Storage.write(["part", part.messageID, part.id], part)
+
+    // Update cache and schedule debounced flush
+    await MessageV2.PartStore.updatePart(part)
+
+    // Bus event fires immediately for UI responsiveness
     Bus.publish(MessageV2.Event.PartUpdated, {
       part,
       delta,
     })
     return part
   })
+
+  // Flush all pending part writes (call before session completion or shutdown)
+  export const flushParts = async (sessionID: string, messageID: string) => {
+    await MessageV2.PartStore.flush(sessionID, messageID)
+  }
+
+  export const flushAllParts = async () => {
+    await MessageV2.PartStore.flushAll()
+  }
 
   export const getUsage = fn(
     z.object({

@@ -10,6 +10,8 @@ import { useSync } from "@/context/sync"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
+  sessionId?: string
+  sessionKey?: string
 }
 
 export function SessionContextUsage(props: SessionContextUsageProps) {
@@ -17,11 +19,15 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const params = useParams()
   const layout = useLayout()
 
+  const effectiveSessionId = createMemo(() => props.sessionId ?? params.id)
   const variant = createMemo(() => props.variant ?? "button")
-  const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
+  const sessionKey = createMemo(
+    () => props.sessionKey ?? `${params.dir}${effectiveSessionId() ? "/" + effectiveSessionId() : ""}`,
+  )
   const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const view = createMemo(() => layout.view(sessionKey()))
-  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const messages = createMemo(() =>
+    effectiveSessionId() ? (sync.data.message[effectiveSessionId()!] ?? []) : [],
+  )
 
   const cost = createMemo(() => {
     const total = messages().reduce((sum, x) => sum + (x.role === "assistant" ? x.cost : 0), 0)
@@ -48,8 +54,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   })
 
   const openContext = () => {
-    if (!params.id) return
-    view().reviewPanel.open()
+    if (!effectiveSessionId()) return
+    layout.review.open()
     tabs().open("context")
     tabs().setActive("context")
   }
@@ -87,7 +93,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
 
   return (
-    <Show when={params.id}>
+    <Show when={effectiveSessionId()}>
       <Tooltip value={tooltipValue()} placement="top">
         <Switch>
           <Match when={variant() === "indicator"}>{circle()}</Match>

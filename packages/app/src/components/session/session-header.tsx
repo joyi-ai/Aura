@@ -7,7 +7,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useSync } from "@/context/sync"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { getFilename } from "@opencode-ai/util/path"
-import { base64Decode, base64Encode } from "@opencode-ai/util/encode"
+import { base64Encode } from "@opencode-ai/util/encode"
 import { iife } from "@opencode-ai/util/iife"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -20,7 +20,6 @@ import { DialogSelectServer } from "@/components/dialog-select-server"
 import { SessionLspIndicator } from "@/components/session-lsp-indicator"
 import { SessionMcpIndicator } from "@/components/session-mcp-indicator"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { same } from "@/utils/same"
 
 export function SessionHeader() {
   const globalSDK = useGlobalSDK()
@@ -32,29 +31,25 @@ export function SessionHeader() {
   const dialog = useDialog()
   const sync = useSync()
 
-  const projectDirectory = createMemo(() => base64Decode(params.dir ?? ""))
-
   const sessions = createMemo(() => (sync.data.session ?? []).filter((s) => !s.parentID))
-  const currentSession = createMemo(() => sync.data.session.find((s) => s.id === params.id))
-  const parentSession = createMemo(() => {
-    const current = currentSession()
-    if (!current?.parentID) return undefined
-    return sync.data.session.find((s) => s.id === current.parentID)
-  })
+  const currentSession = createMemo(() => sessions().find((s) => s.id === params.id))
   const shareEnabled = createMemo(() => sync.data.config.share !== "disabled")
   const worktrees = createMemo(() => layout.projects.list().map((p) => p.worktree), [], { equals: same })
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
   const view = createMemo(() => layout.view(sessionKey()))
+  const branch = createMemo(() => sync.data.vcs?.branch)
 
   function navigateToProject(directory: string) {
-    navigate(`/${base64Encode(directory)}`)
+    queueMicrotask(() => {
+      navigate(`/${base64Encode(directory)}`)
+    })
   }
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
-    // Only navigate if we're actually changing to a different session
-    if (session.id === params.id) return
-    navigate(`/${params.dir}/session/${session.id}`)
+    queueMicrotask(() => {
+      navigate(`/${params.dir}/session/${session.id}`)
+    })
   }
 
   return (
@@ -71,9 +66,13 @@ export function SessionHeader() {
           <div class="flex items-center gap-2 min-w-0">
             <div class="hidden xl:flex items-center gap-2">
               <Select
-                options={worktrees()}
-                current={sync.project?.worktree ?? projectDirectory()}
-                label={(x) => getFilename(x)}
+                options={layout.projects.list().map((project) => project.worktree)}
+                current={sync.directory}
+                label={(x) => {
+                  const name = getFilename(x)
+                  const b = x === sync.directory ? branch() : undefined
+                  return b ? `${name}:${b}` : name
+                }}
                 onSelect={(x) => (x ? navigateToProject(x) : undefined)}
                 class="text-14-regular text-text-base"
                 variant="ghost"
@@ -88,56 +87,18 @@ export function SessionHeader() {
               </Select>
               <div class="text-text-weaker">/</div>
             </div>
-            <Show
-              when={parentSession()}
-              fallback={
-                <>
-                  <Select
-                    options={sessions()}
-                    current={currentSession()}
-                    placeholder="New session"
-                    label={(x) => x.title}
-                    value={(x) => x.id}
-                    onSelect={navigateToSession}
-                    class="text-14-regular text-text-base max-w-[calc(100vw-180px)] md:max-w-md"
-                    variant="ghost"
-                  />
-                </>
-              }
-            >
-              <div class="flex items-center gap-2 min-w-0">
-                <Select
-                  options={sessions()}
-                  current={parentSession()}
-                  placeholder="Back to parent session"
-                  label={(x) => x.title}
-                  value={(x) => x.id}
-                  onSelect={(session) => {
-                    // Only navigate if selecting a different session than current parent
-                    const currentParent = parentSession()
-                    if (session && currentParent && session.id !== currentParent.id) {
-                      navigateToSession(session)
-                    }
-                  }}
-                  class="text-14-regular text-text-base max-w-[calc(100vw-180px)] md:max-w-md"
-                  variant="ghost"
-                />
-                <div class="text-text-weaker">/</div>
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <Tooltip value="Back to parent session">
-                    <button
-                      type="button"
-                      class="flex items-center justify-center gap-1 p-1 rounded hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active transition-colors flex-shrink-0"
-                      onClick={() => navigateToSession(parentSession())}
-                    >
-                      <Icon name="arrow-left" size="small" class="text-icon-base" />
-                    </button>
-                  </Tooltip>
-                </div>
-              </div>
-            </Show>
+            <Select
+              options={sessions()}
+              current={currentSession()}
+              placeholder="New session"
+              label={(x) => x.title}
+              value={(x) => x.id}
+              onSelect={navigateToSession}
+              class="text-14-regular text-text-base max-w-[calc(100vw-180px)] md:max-w-md"
+              variant="ghost"
+            />
           </div>
-          <Show when={currentSession() && !parentSession()}>
+          <Show when={currentSession()}>
             <TooltipKeybind class="hidden xl:block" title="New session" keybind={command.keybind("session.new")}>
               <IconButton as={A} href={`/${params.dir}/session`} icon="edit-small-2" variant="ghost" />
             </TooltipKeybind>
@@ -241,7 +202,7 @@ export function SessionHeader() {
                     let shareURL = session.share?.url
                     if (!shareURL) {
                       shareURL = await globalSDK.client.session
-                        .share({ sessionID: session.id, directory: projectDirectory() })
+                        .share({ sessionID: session.id, directory: sync.directory })
                         .then((r) => r.data?.share?.url)
                         .catch((e) => {
                           console.error("Failed to share session", e)
@@ -250,13 +211,8 @@ export function SessionHeader() {
                     }
                     return shareURL
                   },
-                  { initialValue: "" },
                 )
-                return (
-                  <Show when={url.latest}>
-                    {(shareUrl) => <TextField value={shareUrl()} readOnly copyable class="w-72" />}
-                  </Show>
-                )
+                return <Show when={url()}>{(url) => <TextField value={url()} readOnly copyable class="w-72" />}</Show>
               })}
             </Popover>
           </Show>

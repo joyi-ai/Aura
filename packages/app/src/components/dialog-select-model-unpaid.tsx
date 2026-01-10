@@ -5,7 +5,7 @@ import type { IconName } from "@opencode-ai/ui/icons/provider"
 import { List, type ListRef } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
-import { type Component, onCleanup, onMount, Show } from "solid-js"
+import { type Component, createMemo, onCleanup, onMount, Show } from "solid-js"
 import { useLocal } from "@/context/local"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { DialogConnectProvider } from "./dialog-connect-provider"
@@ -15,6 +15,21 @@ export const DialogSelectModelUnpaid: Component = () => {
   const local = useLocal()
   const dialog = useDialog()
   const providers = useProviders()
+  const isOhMyMode = createMemo(() => local.mode.current()?.id === "oh-my-opencode")
+  const models = createMemo(() =>
+    local.model.list().filter((m) => m.provider.id !== "claude-agent" && m.provider.id !== "codex"),
+  )
+  const popularItems = createMemo(() => providers.popular().filter((provider) => provider.id !== "claude-agent"))
+
+  if (isOhMyMode()) {
+    return (
+      <Dialog title="Select model" description="Managed by Oh My OpenCode">
+        <div class="px-3 pb-6 text-13-regular text-text-weak">
+          Model selection is managed by Oh My OpenCode. The current agent will use its configured default model.
+        </div>
+      </Dialog>
+    )
+  }
 
   let listRef: ListRef | undefined
   const handleKey = (e: KeyboardEvent) => {
@@ -35,7 +50,7 @@ export const DialogSelectModelUnpaid: Component = () => {
         <div class="text-14-medium text-text-base px-2.5">Free models provided by OpenCode</div>
         <List
           ref={(ref) => (listRef = ref)}
-          items={local.model.list}
+          items={models}
           current={local.model.current()}
           key={(x) => `${x.provider.id}:${x.id}`}
           onSelect={(x) => {
@@ -66,7 +81,7 @@ export const DialogSelectModelUnpaid: Component = () => {
               <List
                 class="w-full px-0"
                 key={(x) => x?.id}
-                items={providers.popular}
+                items={popularItems}
                 activeIcon="plus-small"
                 sortBy={(a, b) => {
                   if (popularProviders.includes(a.id) && popularProviders.includes(b.id))
@@ -80,7 +95,10 @@ export const DialogSelectModelUnpaid: Component = () => {
               >
                 {(i) => (
                   <div class="w-full flex items-center gap-x-3">
-                    <ProviderIcon data-slot="list-item-extra-icon" id={i.id as IconName} />
+                    <ProviderIcon
+                      data-slot="list-item-extra-icon"
+                      id={(i.id === "codex" ? "openai" : i.id) as IconName}
+                    />
                     <span>{i.name}</span>
                     <Show when={i.id === "opencode"}>
                       <Tag>Recommended</Tag>

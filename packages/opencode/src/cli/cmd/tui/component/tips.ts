@@ -1,7 +1,7 @@
 export const TIPS = [
   "Type {highlight}@{/highlight} followed by a filename to fuzzy search and attach files to your prompt.",
   "Start a message with {highlight}!{/highlight} to run shell commands directly (e.g., {highlight}!ls -la{/highlight}).",
-  "Press {highlight}Tab{/highlight} to cycle between Build (full access) and Plan (read-only) agents.",
+  "Press {highlight}Tab{/highlight} to cycle agents and {highlight}Shift+Tab{/highlight} to cycle modes.",
   "Use {highlight}/undo{/highlight} to revert the last message and any file changes made by OpenCode.",
   "Use {highlight}/redo{/highlight} to restore previously undone messages and file changes.",
   "Run {highlight}/share{/highlight} to create a public link to your conversation at opencode.ai.",

@@ -99,6 +99,7 @@ const cli = yargs(hideBin(process.argv))
   .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
+  .demandCommand(1, "You must specify a command")
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

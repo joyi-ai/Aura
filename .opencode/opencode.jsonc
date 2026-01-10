@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // "plugin": ["opencode-openai-codex-auth"],
+  "plugin": ["opencode-openai-codex-auth"],
   // "enterprise": {
   //   "url": "https://enterprise.dev.opencode.ai",
   // },
@@ -8,6 +8,11 @@
   "provider": {
     "opencode": {
       "options": {},
+    },
+  },
+  "permission": {
+    "bash": {
+      "ls foo": "ask",
     },
   },
   "mcp": {

@@ -210,6 +210,8 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (suspended()) return
+      // Ignore key repeat events to prevent rapid-fire triggering
+      if (event.repeat) return
 
       const paletteKeybinds = parseKeybind("mod+shift+p")
       if (matchKeybind(paletteKeybinds, event)) {

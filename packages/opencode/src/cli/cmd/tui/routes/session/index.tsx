@@ -1845,7 +1845,6 @@ function Question(props: ToolProps<typeof QuestionTool>) {
     if (!answer?.length) return "(no answer)"
     return answer.join(", ")
   }
-
   return (
     <Switch>
       <Match when={props.metadata.answers}>
@@ -1855,7 +1854,9 @@ function Question(props: ToolProps<typeof QuestionTool>) {
               {(q, i) => (
                 <box flexDirection="row" gap={1}>
                   <text fg={theme.textMuted}>{q.question}</text>
-                  <text fg={theme.text}>{format(props.metadata.answers?.[i()])}</text>
+                  <text fg={theme.text}>
+                    {props.metadata.answers?.[i()] === undefined ? "(no answer)" : format(props.metadata.answers?.[i()])}
+                  </text>
                 </box>
               )}
             </For>

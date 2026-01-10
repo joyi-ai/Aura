@@ -5,7 +5,6 @@ import { MessageV2 } from "./message-v2"
 import { Session } from "."
 import { Log } from "../util/log"
 import { splitWhen } from "remeda"
-import { Storage } from "../storage/storage"
 import { Bus } from "../bus"
 import { SessionPrompt } from "./prompt"
 
@@ -83,24 +82,32 @@ export namespace SessionRevert {
     const messageID = session.revert.messageID
     const [preserve, remove] = splitWhen(msgs, (x) => x.info.id === messageID)
     msgs = preserve
+
+    // Remove messages that need to be removed
     for (const msg of remove) {
-      await Storage.remove(["message", sessionID, msg.info.id])
-      await Bus.publish(MessageV2.Event.Removed, { sessionID: sessionID, messageID: msg.info.id })
+      await Session.removeMessage({ sessionID, messageID: msg.info.id })
     }
+
+    // Handle partial message revert (remove specific parts)
     const last = preserve.at(-1)
     if (session.revert.partID && last) {
       const partID = session.revert.partID
-      const [preserveParts, removeParts] = splitWhen(last.parts, (x) => x.id === partID)
-      last.parts = preserveParts
+      const [_preserveParts, removeParts] = splitWhen(last.parts, (x) => x.id === partID)
+
+      // Remove parts using the new inline storage
       for (const part of removeParts) {
-        await Storage.remove(["part", last.info.id, part.id])
+        await MessageV2.PartStore.removePart(sessionID, last.info.id, part.id)
         await Bus.publish(MessageV2.Event.PartRemoved, {
           sessionID: sessionID,
           messageID: last.info.id,
           partID: part.id,
         })
       }
+
+      // Flush the changes to disk
+      await MessageV2.PartStore.flush(sessionID, last.info.id)
     }
+
     await Session.update(sessionID, (draft) => {
       draft.revert = undefined
     })

@@ -44,6 +44,10 @@ import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { iife } from "@/util/iife"
 import { Shell } from "@/shell/shell"
+import { ClaudeAgentProcessor } from "./claude-agent-processor"
+import { ClaudeAgent } from "@/provider/claude-agent"
+import { ClaudePlugin } from "@/claude-plugin"
+import { CodexProcessor } from "./codex-processor"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -100,6 +104,10 @@ export namespace SessionPrompt {
       ),
     system: z.string().optional(),
     variant: z.string().optional(),
+    /** Enable extended thinking for Claude Code mode */
+    thinking: z.boolean().optional(),
+    /** Use Claude Code flow (Agent SDK) - for OpenRouter models in Claude Code mode */
+    claudeCodeFlow: z.boolean().optional(),
     parts: z.array(
       z.discriminatedUnion("type", [
         MessageV2.TextPart.omit({
@@ -152,6 +160,32 @@ export namespace SessionPrompt {
     await SessionRevert.cleanup(session)
 
     const message = await createUserMessage(input)
+
+    // Extract prompt text from parts for hook
+    const promptText = message.parts
+      .filter((p): p is MessageV2.TextPart => p.type === "text" && !p.synthetic)
+      .map((p) => p.text)
+      .join("\n")
+
+    // Trigger UserPromptSubmit hook (skipped for sub-sessions)
+    await ClaudePlugin.Hooks.trigger("UserPromptSubmit", {
+      sessionID: input.sessionID,
+      parentSessionId: session.parentID,
+      messageID: message.info.id,
+      prompt: promptText,
+    })
+
+    // Mark first message processed for this session
+    if (ClaudePlugin.Hooks.isFirstMessage(input.sessionID)) {
+      ClaudePlugin.Hooks.markFirstMessageProcessed(input.sessionID)
+    }
+
+    // Record user message in transcript
+    await ClaudePlugin.Transcript.recordUserMessage({
+      sessionID: input.sessionID,
+      content: promptText,
+    })
+
     await Session.touch(input.sessionID)
 
     // this is backwards compatibility for allowing `tools` to be specified when
@@ -265,8 +299,26 @@ export namespace SessionPrompt {
 
     using _ = defer(() => cancel(sessionID))
 
-    let step = 0
     const session = await Session.get(sessionID)
+
+    // If session has worktree, run in worktree context
+    if (session.worktree?.path) {
+      log.info("running loop in worktree context", { sessionID, worktree: session.worktree.path })
+      return await Instance.provide({
+        directory: session.worktree.path,
+        fn: () => runLoop(sessionID, session, abort),
+      })
+    }
+
+    return await runLoop(sessionID, session, abort)
+  })
+
+  async function runLoop(
+    sessionID: string,
+    session: Session.Info,
+    abort: AbortSignal,
+  ): Promise<MessageV2.WithParts> {
+    let step = 0
     while (true) {
       SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
@@ -480,6 +532,7 @@ export namespace SessionPrompt {
 
       // pending compaction
       if (task?.type === "compaction") {
+        if (model.providerID === "codex") continue
         const result = await SessionCompaction.process({
           messages: msgs,
           parentID: lastUser.id,
@@ -493,6 +546,7 @@ export namespace SessionPrompt {
 
       // context overflow, needs compaction
       if (
+        model.providerID !== "codex" &&
         lastFinished &&
         lastFinished.summary !== true &&
         (await SessionCompaction.isOverflow({ tokens: lastFinished.tokens, model }))
@@ -503,6 +557,209 @@ export namespace SessionPrompt {
           model: lastUser.model,
           auto: true,
         })
+        continue
+      }
+
+      // Claude Agent processing - use Agent SDK instead of normal LLM flow
+      // Also route OpenRouter models through Claude Agent when claudeCodeFlow is enabled
+      const useClaudeAgentFlow = ClaudeAgent.isClaudeAgentModel(model.providerID) || lastUser.claudeCodeFlow === true
+      if (useClaudeAgentFlow) {
+        const agent = await Agent.get(lastUser.agent)
+        const assistantMessage = (await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          parentID: lastUser.id,
+          role: "assistant",
+          mode: agent.name,
+          agent: agent.name,
+          path: {
+            cwd: Instance.directory,
+            root: Instance.worktree,
+          },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: model.id,
+          providerID: model.providerID,
+          time: {
+            created: Date.now(),
+          },
+          sessionID,
+        })) as MessageV2.Assistant
+
+        // Extract prompt text and images from user message parts
+        const userParts = await MessageV2.parts({ sessionID, messageID: lastUser.id })
+        const promptText = userParts
+          .filter((p): p is MessageV2.TextPart => p.type === "text")
+          .map((p) => p.text)
+          .join("\n")
+
+        // Extract image file parts
+        const imageParts = userParts.filter(
+          (p): p is MessageV2.FilePart => p.type === "file" && p.mime.startsWith("image/"),
+        )
+
+        // Convert image parts to ImageInput format for the SDK
+        const images: ClaudeAgentProcessor.ImageInput[] = []
+        for (const part of imageParts) {
+          try {
+            const url = new URL(part.url)
+            let base64Data: string
+
+            if (url.protocol === "data:") {
+              // Already a data URL - extract base64 data
+              const match = part.url.match(/^data:[^;]+;base64,(.+)$/)
+              if (match) {
+                base64Data = match[1]
+              } else {
+                continue
+              }
+            } else if (url.protocol === "file:") {
+              // File URL - read and convert to base64
+              const filepath = fileURLToPath(part.url)
+              const file = Bun.file(filepath)
+              const bytes = await file.bytes()
+              base64Data = Buffer.from(bytes).toString("base64")
+            } else {
+              continue
+            }
+
+            // Map mime type to SDK-supported types
+            const mediaType = part.mime as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+            if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(part.mime)) {
+              images.push({
+                data: base64Data,
+                mediaType,
+              })
+            }
+          } catch (e) {
+            log.warn("failed to process image part", { url: part.url, error: e })
+          }
+        }
+
+        try {
+          // Default to 10000 thinking tokens if enabled (or not explicitly disabled)
+          const thinkingEnabled = lastUser.thinking !== false
+          const result = await ClaudeAgentProcessor.process({
+            sessionID,
+            assistantMessage,
+            prompt: promptText,
+            images: images.length > 0 ? images : undefined,
+            agent,
+            abort,
+            modelID: model.id,
+            providerID: model.providerID,
+            maxThinkingTokens: thinkingEnabled ? 10000 : undefined,
+          })
+
+          // Update assistant message with result
+          assistantMessage.finish = result.finish
+          assistantMessage.cost = result.cost
+          assistantMessage.tokens = result.tokens
+          assistantMessage.time.completed = Date.now()
+          await Session.updateMessage(assistantMessage)
+
+          if (result.finish !== "end_turn" && result.finish !== "tool-calls") {
+            break
+          }
+        } catch (error) {
+          log.error("claude agent processing failed", { error })
+          if (MessageV2.AuthError.isInstance(error)) {
+            assistantMessage.error = error.toObject()
+          } else {
+            assistantMessage.error = {
+              name: "UnknownError",
+              data: {
+                message: error instanceof Error ? error.message : "Unknown error",
+              },
+            }
+          }
+          assistantMessage.time.completed = Date.now()
+          await Session.updateMessage(assistantMessage)
+          break
+        }
+        continue
+      }
+
+      if (model.providerID === "codex") {
+        const agent = await Agent.get(lastUser.agent)
+        const assistantMessage = (await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          parentID: lastUser.id,
+          role: "assistant",
+          mode: agent.name,
+          agent: agent.name,
+          path: {
+            cwd: Instance.directory,
+            root: Instance.worktree,
+          },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: model.id,
+          providerID: model.providerID,
+          time: {
+            created: Date.now(),
+          },
+          sessionID,
+        })) as MessageV2.Assistant
+
+        const userParts = await MessageV2.parts({ sessionID, messageID: lastUser.id })
+        const promptText = userParts
+          .filter((p): p is MessageV2.TextPart => p.type === "text")
+          .map((p) => p.text)
+          .join("\n")
+        const images = userParts
+          .filter((p): p is MessageV2.FilePart => p.type === "file" && p.mime.startsWith("image/"))
+          .map((part) => part.url)
+
+        const result = await CodexProcessor.process({
+          sessionID,
+          assistantMessage,
+          prompt: promptText,
+          images: images.length > 0 ? images : undefined,
+          agent,
+          abort,
+          model,
+          sessionPermission: session.permission ?? [],
+          user: lastUser,
+        }).catch((error) => {
+          log.error("codex processing failed", { error })
+          if (MessageV2.AuthError.isInstance(error)) {
+            assistantMessage.error = error.toObject()
+            return undefined
+          }
+          assistantMessage.error = {
+            name: "UnknownError",
+            data: {
+              message: error instanceof Error ? error.message : "Unknown error",
+            },
+          }
+          return undefined
+        })
+
+        if (!result) {
+          assistantMessage.time.completed = Date.now()
+          await Session.updateMessage(assistantMessage)
+          break
+        }
+
+        assistantMessage.finish = result.finish
+        assistantMessage.cost = result.cost
+        assistantMessage.tokens = result.tokens
+        assistantMessage.time.completed = Date.now()
+        await Session.updateMessage(assistantMessage)
+
+        if (result.finish !== "end_turn" && result.finish !== "tool-calls") {
+          break
+        }
         continue
       }
 
@@ -629,7 +886,7 @@ export namespace SessionPrompt {
       return item
     }
     throw new Error("Impossible")
-  })
+  }
 
   async function lastModel(sessionID: string) {
     for await (const item of MessageV2.stream(sessionID)) {
@@ -702,17 +959,95 @@ export namespace SessionPrompt {
               args,
             },
           )
-          const result = await item.execute(args, ctx)
-          await Plugin.trigger(
-            "tool.execute.after",
-            {
-              tool: item.id,
+
+          // Trigger Claude plugin PreToolUse hook with toolUseId
+          const preToolResults = await ClaudePlugin.Hooks.trigger("PreToolUse", {
+            sessionID: ctx.sessionID,
+            parentSessionId: input.session.parentID,
+            messageID: ctx.messageID,
+            toolName: item.id,
+            toolArgs: args,
+            toolUseId: options.toolCallId,
+          })
+
+          // Record tool use in transcript
+          await ClaudePlugin.Transcript.recordToolUse({
+            sessionID: ctx.sessionID,
+            toolName: item.id,
+            toolInput: args,
+            toolUseId: options.toolCallId,
+          })
+
+          // Handle hook decisions
+          for (const hookResult of preToolResults) {
+            if (hookResult.decision === "deny") {
+              const error = new PermissionNext.RejectedError()
+              if (hookResult.reason) {
+                error.message = hookResult.reason
+              }
+              throw error
+            }
+            if (hookResult.updatedInput) {
+              Object.assign(args, hookResult.updatedInput)
+            }
+          }
+
+          try {
+            const result = await item.execute(args, ctx)
+
+            await Plugin.trigger(
+              "tool.execute.after",
+              {
+                tool: item.id,
+                sessionID: ctx.sessionID,
+                callID: ctx.callID,
+              },
+              result,
+            )
+
+            // Trigger Claude plugin PostToolUse hook
+            await ClaudePlugin.Hooks.trigger("PostToolUse", {
               sessionID: ctx.sessionID,
-              callID: ctx.callID,
-            },
-            result,
-          )
-          return result
+              parentSessionId: input.session.parentID,
+              messageID: ctx.messageID,
+              toolName: item.id,
+              toolArgs: args,
+              toolResult: result,
+              toolUseId: options.toolCallId,
+            })
+
+            // Record tool result in transcript
+            await ClaudePlugin.Transcript.recordToolResult({
+              sessionID: ctx.sessionID,
+              toolName: item.id,
+              toolOutput: typeof result.output === "string" ? { output: result.output } : (result.output as Record<string, unknown>),
+              toolUseId: options.toolCallId,
+            })
+
+            return result
+          } catch (error) {
+            // Trigger Claude plugin PostToolUseFailure hook
+            await ClaudePlugin.Hooks.trigger("PostToolUseFailure", {
+              sessionID: ctx.sessionID,
+              parentSessionId: input.session.parentID,
+              messageID: ctx.messageID,
+              toolName: item.id,
+              toolArgs: args,
+              error: error instanceof Error ? error : new Error(String(error)),
+              toolUseId: options.toolCallId,
+            })
+
+            // Record tool failure in transcript
+            await ClaudePlugin.Transcript.recordToolResult({
+              sessionID: ctx.sessionID,
+              toolName: item.id,
+              toolOutput: {},
+              toolUseId: options.toolCallId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+
+            throw error
+          }
         },
         toModelOutput(result) {
           return {
@@ -743,6 +1078,38 @@ export namespace SessionPrompt {
           },
         )
 
+        // Trigger Claude plugin PreToolUse hook with toolUseId
+        const preToolResults = await ClaudePlugin.Hooks.trigger("PreToolUse", {
+          sessionID: ctx.sessionID,
+          parentSessionId: input.session.parentID,
+          messageID: ctx.messageID,
+          toolName: key,
+          toolArgs: args,
+          toolUseId: opts.toolCallId,
+        })
+
+        // Record tool use in transcript
+        await ClaudePlugin.Transcript.recordToolUse({
+          sessionID: ctx.sessionID,
+          toolName: key,
+          toolInput: args,
+          toolUseId: opts.toolCallId,
+        })
+
+        // Handle hook decisions
+        for (const hookResult of preToolResults) {
+          if (hookResult.decision === "deny") {
+            const error = new PermissionNext.RejectedError()
+            if (hookResult.reason) {
+              error.message = hookResult.reason
+            }
+            throw error
+          }
+          if (hookResult.updatedInput) {
+            Object.assign(args, hookResult.updatedInput)
+          }
+        }
+
         await ctx.ask({
           permission: key,
           metadata: {},
@@ -750,43 +1117,88 @@ export namespace SessionPrompt {
           always: ["*"],
         })
 
-        const result = await execute(args, opts)
+        try {
+          const result = await execute(args, opts)
 
-        await Plugin.trigger(
-          "tool.execute.after",
-          {
-            tool: key,
+          await Plugin.trigger(
+            "tool.execute.after",
+            {
+              tool: key,
+              sessionID: ctx.sessionID,
+              callID: opts.toolCallId,
+            },
+            result,
+          )
+
+          // Trigger Claude plugin PostToolUse hook
+          await ClaudePlugin.Hooks.trigger("PostToolUse", {
             sessionID: ctx.sessionID,
-            callID: opts.toolCallId,
-          },
-          result,
-        )
+            parentSessionId: input.session.parentID,
+            messageID: ctx.messageID,
+            toolName: key,
+            toolArgs: args,
+            toolResult: result,
+            toolUseId: opts.toolCallId,
+          })
 
-        const textParts: string[] = []
-        const attachments: MessageV2.FilePart[] = []
+          const textParts: string[] = []
+          const attachments: MessageV2.FilePart[] = []
 
-        for (const contentItem of result.content) {
-          if (contentItem.type === "text") {
-            textParts.push(contentItem.text)
-          } else if (contentItem.type === "image") {
-            attachments.push({
-              id: Identifier.ascending("part"),
-              sessionID: input.session.id,
-              messageID: input.processor.message.id,
-              type: "file",
-              mime: contentItem.mimeType,
-              url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
-            })
+          for (const contentItem of result.content) {
+            if (contentItem.type === "text") {
+              textParts.push(contentItem.text)
+            } else if (contentItem.type === "image") {
+              attachments.push({
+                id: Identifier.ascending("part"),
+                sessionID: input.session.id,
+                messageID: input.processor.message.id,
+                type: "file",
+                mime: contentItem.mimeType,
+                url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
+              })
+            }
+            // Add support for other types if needed
           }
-          // Add support for other types if needed
-        }
 
-        return {
-          title: "",
-          metadata: result.metadata ?? {},
-          output: textParts.join("\n\n"),
-          attachments,
-          content: result.content, // directly return content to preserve ordering when outputting to model
+          const toolOutput = {
+            title: "",
+            metadata: result.metadata ?? {},
+            output: textParts.join("\n\n"),
+            attachments,
+            content: result.content, // directly return content to preserve ordering when outputting to model
+          }
+
+          // Record tool result in transcript
+          await ClaudePlugin.Transcript.recordToolResult({
+            sessionID: ctx.sessionID,
+            toolName: key,
+            toolOutput: { output: toolOutput.output },
+            toolUseId: opts.toolCallId,
+          })
+
+          return toolOutput
+        } catch (error) {
+          // Trigger Claude plugin PostToolUseFailure hook
+          await ClaudePlugin.Hooks.trigger("PostToolUseFailure", {
+            sessionID: ctx.sessionID,
+            parentSessionId: input.session.parentID,
+            messageID: ctx.messageID,
+            toolName: key,
+            toolArgs: args,
+            error: error instanceof Error ? error : new Error(String(error)),
+            toolUseId: opts.toolCallId,
+          })
+
+          // Record tool failure in transcript
+          await ClaudePlugin.Transcript.recordToolResult({
+            sessionID: ctx.sessionID,
+            toolName: key,
+            toolOutput: {},
+            toolUseId: opts.toolCallId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+
+          throw error
         }
       }
       item.toModelOutput = (result) => {
@@ -815,6 +1227,8 @@ export namespace SessionPrompt {
       model: input.model ?? agent.model ?? (await lastModel(input.sessionID)),
       system: input.system,
       variant: input.variant,
+      thinking: input.thinking,
+      claudeCodeFlow: input.claudeCodeFlow,
     }
 
     const parts = await Promise.all(
@@ -1584,6 +1998,7 @@ export namespace SessionPrompt {
     providerID: string
     modelID: string
   }) {
+    if (input.providerID === "codex") return
     if (input.session.parentID) return
     if (!Session.isDefaultTitle(input.session.title)) return
 

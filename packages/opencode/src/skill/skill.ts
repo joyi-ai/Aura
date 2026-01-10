@@ -7,6 +7,7 @@ import { Log } from "../util/log"
 import { Global } from "@/global"
 import { Filesystem } from "@/util/filesystem"
 import { exists } from "fs/promises"
+import { ClaudePlugin } from "@/claude-plugin"
 import { Flag } from "@/flag/flag"
 
 export namespace Skill {
@@ -111,6 +112,23 @@ export namespace Skill {
         followSymlinks: true,
       })) {
         await addSkill(match)
+      }
+    }
+
+    // Load skills from Claude Code plugins
+    for (const skill of await ClaudePlugin.skills()) {
+      if (skills[skill.name]) {
+        log.warn("duplicate skill name from plugin", {
+          name: skill.name,
+          existing: skills[skill.name].location,
+          duplicate: skill.location,
+        })
+        continue
+      }
+      skills[skill.name] = {
+        name: skill.name,
+        description: skill.description,
+        location: skill.location,
       }
     }
 

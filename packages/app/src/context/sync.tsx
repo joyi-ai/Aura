@@ -12,8 +12,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   init: () => {
     const globalSync = useGlobalSync()
     const sdk = useSDK()
-    const [store, setStore] = globalSync.child(sdk.directory)
-    const absolute = (path: string) => (store.path.directory + "/" + path).replace("//", "/")
+    const child = createMemo(() => globalSync.child(sdk.directory))
+    const store = createMemo(() => child()[0])
+    const setStore = (...args: [any, ...any[]]) => (child()[1] as (...args: any[]) => void)(...args)
+    const absolute = (path: string) => (store().path.directory + "/" + path).replace("//", "/")
     const chunk = 200
     const inflight = new Map<string, Promise<void>>()
     const inflightDiff = new Map<string, Promise<void>>()
@@ -24,9 +26,70 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       loading: {} as Record<string, boolean>,
     })
 
+    type SetState = ReturnType<typeof child>[1]
+
+    const mergeMessages = (
+      setTarget: SetState,
+      sessionID: string,
+      items: Message[],
+      options?: { prune?: boolean },
+    ) => {
+      const prune = options?.prune ?? false
+      if (!prune) {
+        if (items.length === 0) return
+        setTarget(
+          produce((draft) => {
+            const current = draft.message[sessionID]
+            if (!current) {
+              draft.message[sessionID] = items.slice()
+              return
+            }
+            for (const item of items) {
+              const result = Binary.search(current, item.id, (m) => m.id)
+              if (result.found) {
+                current[result.index] = item
+                continue
+              }
+              current.splice(result.index, 0, item)
+            }
+          }),
+        )
+        return
+      }
+      setTarget(
+        produce((draft) => {
+          if (items.length === 0) {
+            draft.message[sessionID] = []
+            return
+          }
+          const current = draft.message[sessionID]
+          if (!current) {
+            draft.message[sessionID] = items.slice()
+            return
+          }
+          const firstResult = Binary.search(current, items[0].id, (m) => m.id)
+          const lastResult = Binary.search(current, items[items.length - 1].id, (m) => m.id)
+          const prefix = current.slice(0, firstResult.index)
+          const tailIndex = lastResult.index + (lastResult.found ? 1 : 0)
+          const suffix = current.slice(tailIndex)
+          draft.message[sessionID] = [...prefix, ...items, ...suffix]
+        }),
+      )
+    }
+
+    const mergeParts = (setTarget: SetState, messageID: string, parts: Part[]) => {
+      const sorted = parts
+        .filter((p) => !!p?.id)
+        .slice()
+        .sort((a, b) => a.id.localeCompare(b.id))
+      if (sorted.length === 0) return
+      setTarget("part", messageID, reconcile(sorted, { key: "id" }))
+    }
+
     const getSession = (sessionID: string) => {
-      const match = Binary.search(store.session, sessionID, (s) => s.id)
-      if (match.found) return store.session[match.index]
+      const current = store()
+      const match = Binary.search(current.session, sessionID, (s) => s.id)
+      if (match.found) return current.session[match.index]
       return undefined
     }
 
@@ -38,7 +101,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const hydrateMessages = (sessionID: string) => {
       if (meta.limit[sessionID] !== undefined) return
 
-      const messages = store.message[sessionID]
+      const messages = store().message[sessionID]
       if (!messages) return
 
       const limit = limitFor(messages.length)
@@ -86,16 +149,19 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     return {
-      data: store,
+      get data() {
+        return store()
+      },
       set: setStore,
       get status() {
-        return store.status
+        return store().status
       },
       get ready() {
-        return store.status !== "loading"
+        return store().status !== "loading"
       },
       get project() {
-        const match = Binary.search(globalSync.data.project, store.project, (p) => p.id)
+        const current = store()
+        const match = Binary.search(globalSync.data.project, current.project, (p) => p.id)
         if (match.found) return globalSync.data.project[match.index]
         return undefined
       },
@@ -116,7 +182,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             agent: input.agent,
             model: input.model,
           }
-          setStore(
+          const [, localSetStore] = child()
+          localSetStore(
             produce((draft) => {
               const messages = draft.message[input.sessionID]
               if (!messages) {
@@ -132,11 +199,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             }),
           )
         },
+        mergeMessage(input: { info: Message; parts?: Part[] }) {
+          const [, localSetStore] = child()
+          mergeMessages(localSetStore, input.info.sessionID, [input.info])
+          mergeParts(localSetStore, input.info.id, input.parts ?? [])
+        },
         async sync(sessionID: string) {
           const hasSession = getSession(sessionID) !== undefined
           hydrateMessages(sessionID)
 
-          const hasMessages = store.message[sessionID] !== undefined
+          const hasMessages = store().message[sessionID] !== undefined
           if (hasSession && hasMessages) return
 
           const pending = inflight.get(sessionID)
@@ -174,7 +246,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return promise
         },
         async diff(sessionID: string) {
-          if (store.session_diff[sessionID] !== undefined) return
+          if (store().session_diff[sessionID] !== undefined) return
 
           const pending = inflightDiff.get(sessionID)
           if (pending) return pending
@@ -191,7 +263,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return promise
         },
         async todo(sessionID: string) {
-          if (store.todo[sessionID] !== undefined) return
+          if (store().todo[sessionID] !== undefined) return
 
           const pending = inflightTodo.get(sessionID)
           if (pending) return pending
@@ -209,7 +281,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         history: {
           more(sessionID: string) {
-            if (store.message[sessionID] === undefined) return false
+            if (store().message[sessionID] === undefined) return false
             if (meta.limit[sessionID] === undefined) return false
             if (meta.complete[sessionID]) return false
             return true
@@ -226,20 +298,24 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           },
         },
         fetch: async (count = 10) => {
-          setStore("limit", (x) => x + count)
-          await sdk.client.session.list().then((x) => {
+          const [localStore, localSetStore] = child()
+          const client = sdk.client
+          localSetStore("limit", (x) => x + count)
+          await client.session.list().then((x) => {
             const sessions = (x.data ?? [])
               .filter((s) => !!s?.id)
               .slice()
               .sort((a, b) => a.id.localeCompare(b.id))
-              .slice(0, store.limit)
-            setStore("session", reconcile(sessions, { key: "id" }))
+              .slice(0, localStore.limit)
+            localSetStore("session", reconcile(sessions, { key: "id" }))
           })
         },
-        more: createMemo(() => store.session.length >= store.limit),
+        more: createMemo(() => store().session.length >= store().limit),
         archive: async (sessionID: string) => {
-          await sdk.client.session.update({ sessionID, time: { archived: Date.now() } })
-          setStore(
+          const [, localSetStore] = child()
+          const client = sdk.client
+          await client.session.update({ sessionID, time: { archived: Date.now() } })
+          localSetStore(
             produce((draft) => {
               const match = Binary.search(draft.session, sessionID, (s) => s.id)
               if (match.found) draft.session.splice(match.index, 1)
@@ -249,7 +325,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       },
       absolute,
       get directory() {
-        return store.path.directory
+        return store().path.directory
       },
     }
   },

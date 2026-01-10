@@ -6,6 +6,7 @@ import { open as shellOpen } from "@tauri-apps/plugin-shell"
 import { type as ostype } from "@tauri-apps/plugin-os"
 import { check, Update } from "@tauri-apps/plugin-updater"
 import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification"
 import { relaunch } from "@tauri-apps/plugin-process"
@@ -257,6 +258,14 @@ const platform: Platform = {
 
   // @ts-expect-error
   fetch: tauriFetch,
+
+  invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+    return invoke<T>(cmd, args)
+  },
+
+  listen: async <T,>(event: string, handler: (payload: T) => void): Promise<() => void> => {
+    return listen<T>(event, (e) => handler(e.payload))
+  },
 }
 
 createMenu()

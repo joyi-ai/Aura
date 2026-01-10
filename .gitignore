@@ -24,3 +24,6 @@ target
 # Local dev files
 opencode-dev
 logs/
+.env
+.env.local
+*.md

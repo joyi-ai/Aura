@@ -3,6 +3,7 @@ import { unique } from "remeda"
 import type { JSONSchema } from "zod/v4/core"
 import type { Provider } from "./provider"
 import type { ModelsDev } from "./models"
+import type { ProviderRouting } from "./routing"
 import { iife } from "@/util/iife"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
@@ -431,11 +432,11 @@ export namespace ProviderTransform {
     return {}
   }
 
-  export function options(
+  export async function options(
     model: Provider.Model,
     sessionID: string,
     providerOptions?: Record<string, any>,
-  ): Record<string, any> {
+  ): Promise<Record<string, any>> {
     const result: Record<string, any> = {}
 
     if (model.api.npm === "@openrouter/ai-sdk-provider") {
@@ -444,6 +445,42 @@ export namespace ProviderTransform {
       }
       if (model.api.id.includes("gemini-3")) {
         result["reasoning"] = { effort: "high" }
+      }
+
+      // Apply OpenRouter routing settings
+      const { ProviderRouting } = await import("./routing")
+      const routing = (await ProviderRouting.get("openrouter")) as ProviderRouting.OpenRouterSettings | undefined
+      if (routing) {
+        const providerConfig: Record<string, any> = {}
+        if (routing.order && routing.order.length > 0) {
+          providerConfig["order"] = routing.order
+        }
+        if (routing.allow_fallbacks !== undefined) {
+          providerConfig["allow_fallbacks"] = routing.allow_fallbacks
+        }
+        if (routing.require_parameters !== undefined) {
+          providerConfig["require_parameters"] = routing.require_parameters
+        }
+        if (routing.data_collection) {
+          providerConfig["data_collection"] = routing.data_collection
+        }
+        if (Object.keys(providerConfig).length > 0) {
+          result["provider"] = providerConfig
+        }
+      }
+    }
+
+    // Apply Vercel AI Gateway routing settings
+    if (model.api.npm === "@ai-sdk/gateway" || model.providerID === "vercel") {
+      const { ProviderRouting } = await import("./routing")
+      const routing = (await ProviderRouting.get("vercel")) as ProviderRouting.VercelGatewaySettings | undefined
+      if (routing) {
+        if (routing.order && routing.order.length > 0) {
+          result["order"] = routing.order
+        }
+        if (routing.only && routing.only.length > 0) {
+          result["only"] = routing.only
+        }
       }
     }
 

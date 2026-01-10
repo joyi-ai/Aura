@@ -33,10 +33,10 @@ export function withNetworkOptions<T>(yargs: Argv<T>) {
 
 export async function resolveNetworkOptions(args: NetworkOptions) {
   const config = await Config.global()
-  const portExplicitlySet = process.argv.includes("--port")
-  const hostnameExplicitlySet = process.argv.includes("--hostname")
-  const mdnsExplicitlySet = process.argv.includes("--mdns")
-  const corsExplicitlySet = process.argv.includes("--cors")
+  const portExplicitlySet = process.argv.some((arg) => arg === "--port" || arg.startsWith("--port="))
+  const hostnameExplicitlySet = process.argv.some((arg) => arg === "--hostname" || arg.startsWith("--hostname="))
+  const mdnsExplicitlySet = process.argv.some((arg) => arg === "--mdns" || arg.startsWith("--mdns="))
+  const corsExplicitlySet = process.argv.some((arg) => arg === "--cors" || arg.startsWith("--cors="))
 
   const mdns = mdnsExplicitlySet ? args.mdns : (config?.server?.mdns ?? args.mdns)
   const port = portExplicitlySet ? args.port : (config?.server?.port ?? args.port)

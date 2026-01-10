@@ -1,10 +1,15 @@
 #!/usr/bin/env bun
 
-const dir = new URL("..", import.meta.url).pathname
+import { fileURLToPath } from "url"
+import path from "path"
+
+// Get the directory containing this script
+const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+// Go up one level to get the sdk/js directory
+const dir = path.resolve(scriptDir, "..")
 process.chdir(dir)
 
 import { $ } from "bun"
-import path from "path"
 
 import { createClient } from "@hey-api/openapi-ts"
 

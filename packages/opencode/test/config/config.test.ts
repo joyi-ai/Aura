@@ -1145,7 +1145,6 @@ test("project config overrides remote well-known config", async () => {
     Auth.all = originalAuthAll
   }
 })
-
 describe("getPluginName", () => {
   test("extracts name from file:// URL", () => {
     expect(Config.getPluginName("file:///path/to/plugin/foo.js")).toBe("foo")
