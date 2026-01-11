@@ -98,21 +98,77 @@ export const ReadTool = Tool.define("read", {
 
     const limit = params.limit ?? DEFAULT_READ_LIMIT
     const offset = params.offset || 0
-    const lines = await file.text().then((text) => text.split("\n"))
-
     const raw: string[] = []
-    let bytes = 0
-    let truncatedByBytes = false
-    for (let i = offset; i < Math.min(lines.length, offset + limit); i++) {
-      const line = lines[i].length > MAX_LINE_LENGTH ? lines[i].substring(0, MAX_LINE_LENGTH) + "..." : lines[i]
-      const size = Buffer.byteLength(line, "utf-8") + (raw.length > 0 ? 1 : 0)
-      if (bytes + size > MAX_BYTES) {
-        truncatedByBytes = true
+    const reader = file.stream().getReader()
+    const decoder = new TextDecoder()
+    const state = {
+      buffer: "",
+      bytes: 0,
+      line: 0,
+      ended: false,
+      truncatedByBytes: false,
+      truncatedByLines: false,
+      stop: false,
+    }
+
+    while (!state.stop) {
+      const result = await reader.read()
+      if (result.done) {
+        state.ended = true
         break
       }
-      raw.push(line)
-      bytes += size
+
+      state.buffer += decoder.decode(result.value, { stream: true })
+      const parts = state.buffer.split("\n")
+      state.buffer = parts.pop() ?? ""
+
+      for (const part of parts) {
+        const line = part.endsWith("\r") ? part.slice(0, -1) : part
+        if (state.line >= offset) {
+          if (raw.length >= limit) {
+            state.truncatedByLines = true
+            state.stop = true
+            break
+          }
+          const clipped = line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
+          const size = Buffer.byteLength(clipped, "utf-8") + (raw.length > 0 ? 1 : 0)
+          if (state.bytes + size > MAX_BYTES) {
+            state.truncatedByBytes = true
+            state.stop = true
+            break
+          }
+          raw.push(clipped)
+          state.bytes += size
+        }
+        state.line += 1
+      }
     }
+
+    if (state.stop && !state.ended) {
+      await reader.cancel()
+    }
+    if (state.ended && state.buffer && !state.stop) {
+      const line = state.buffer.endsWith("\r") ? state.buffer.slice(0, -1) : state.buffer
+      if (state.line >= offset) {
+        if (raw.length >= limit) {
+          state.truncatedByLines = true
+        }
+        if (raw.length < limit) {
+          const clipped = line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
+          const size = Buffer.byteLength(clipped, "utf-8") + (raw.length > 0 ? 1 : 0)
+          if (state.bytes + size > MAX_BYTES) {
+            state.truncatedByBytes = true
+          }
+          if (!state.truncatedByBytes) {
+            raw.push(clipped)
+            state.bytes += size
+          }
+        }
+      }
+      state.line += 1
+    }
+
+    reader.releaseLock()
 
     const content = raw.map((line, index) => {
       return `${(index + offset + 1).toString().padStart(5, "0")}| ${line}`
@@ -122,16 +178,18 @@ export const ReadTool = Tool.define("read", {
     let output = "<file>\n"
     output += content.join("\n")
 
-    const totalLines = lines.length
+    const totalLines = state.ended ? state.line : undefined
     const lastReadLine = offset + raw.length
-    const hasMoreLines = totalLines > lastReadLine
-    const truncated = hasMoreLines || truncatedByBytes
+    const hasMoreLines = !state.ended || state.truncatedByLines
+    const truncated = hasMoreLines || state.truncatedByBytes
 
-    if (truncatedByBytes) {
+    if (state.truncatedByBytes) {
       output += `\n\n(Output truncated at ${MAX_BYTES} bytes. Use 'offset' parameter to read beyond line ${lastReadLine})`
-    } else if (hasMoreLines) {
+    }
+    if (!state.truncatedByBytes && hasMoreLines) {
       output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${lastReadLine})`
-    } else {
+    }
+    if (!state.truncatedByBytes && !hasMoreLines && totalLines !== undefined) {
       output += `\n\n(End of file - total ${totalLines} lines)`
     }
     output += "\n</file>"
@@ -193,9 +251,10 @@ async function isBinaryFile(filepath: string, file: Bun.BunFile): Promise<boolea
   if (fileSize === 0) return false
 
   const bufferSize = Math.min(4096, fileSize)
-  const buffer = await file.arrayBuffer()
+  const slice = file.slice(0, bufferSize)
+  const buffer = await slice.arrayBuffer().catch(() => new ArrayBuffer(0))
   if (buffer.byteLength === 0) return false
-  const bytes = new Uint8Array(buffer.slice(0, bufferSize))
+  const bytes = new Uint8Array(buffer)
 
   let nonPrintableCount = 0
   for (let i = 0; i < bytes.length; i++) {

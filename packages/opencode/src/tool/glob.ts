@@ -27,37 +27,28 @@ export const GlobTool = Tool.define("glob", {
       },
     })
 
-    let search = params.path ?? Instance.directory
-    search = path.isAbsolute(search) ? search : path.resolve(Instance.directory, search)
+    const base = params.path ?? Instance.directory
+    const search = path.isAbsolute(base) ? base : path.resolve(Instance.directory, base)
 
     const limit = 100
-    const files = []
-    let truncated = false
+    const files: string[] = []
+    const state = { truncated: false }
     for await (const file of Ripgrep.files({
       cwd: search,
       glob: [params.pattern],
     })) {
       if (files.length >= limit) {
-        truncated = true
+        state.truncated = true
         break
       }
-      const full = path.resolve(search, file)
-      const stats = await Bun.file(full)
-        .stat()
-        .then((x) => x.mtime.getTime())
-        .catch(() => 0)
-      files.push({
-        path: full,
-        mtime: stats,
-      })
+      files.push(path.resolve(search, file))
     }
-    files.sort((a, b) => b.mtime - a.mtime)
 
     const output = []
     if (files.length === 0) output.push("No files found")
     if (files.length > 0) {
-      output.push(...files.map((f) => f.path))
-      if (truncated) {
+      output.push(...files)
+      if (state.truncated) {
         output.push("")
         output.push("(Results are truncated. Consider using a more specific path or pattern.)")
       }
@@ -67,7 +58,7 @@ export const GlobTool = Tool.define("glob", {
       title: path.relative(Instance.worktree, search),
       metadata: {
         count: files.length,
-        truncated,
+        truncated: state.truncated,
       },
       output: output.join("\n"),
     }

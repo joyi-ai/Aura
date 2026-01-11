@@ -109,11 +109,23 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       setMeta("complete", sessionID, messages.length < limit)
     }
 
-    const loadMessages = async (sessionID: string, limit: number) => {
+    const loadMessages = async (input: {
+      sessionID: string
+      limit: number
+      afterID?: string
+      merge?: boolean
+    }) => {
+      const sessionID = input.sessionID
       if (meta.loading[sessionID]) return
 
       setMeta("loading", sessionID, true)
-      await retry(() => sdk.client.session.messages({ sessionID, limit }))
+      await retry(() =>
+        sdk.client.session.messages({
+          sessionID,
+          limit: input.limit,
+          afterID: input.afterID,
+        }),
+      )
         .then((messages) => {
           const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
           const next = items
@@ -121,9 +133,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             .filter((m) => !!m?.id)
             .slice()
             .sort((a, b) => a.id.localeCompare(b.id))
+          const merge = input.merge ?? false
+          const current = store().message[sessionID]?.length ?? 0
 
           batch(() => {
-            setStore("message", sessionID, reconcile(next, { key: "id" }))
+            if (merge) {
+              mergeMessages(setStore, sessionID, next)
+            }
+            if (!merge) {
+              setStore("message", sessionID, reconcile(next, { key: "id" }))
+            }
 
             for (const message of items) {
               setStore(
@@ -139,8 +158,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               )
             }
 
-            setMeta("limit", sessionID, limit)
-            setMeta("complete", sessionID, next.length < limit)
+            const total = merge ? current + next.length : next.length
+            setMeta("limit", sessionID, total)
+            setMeta("complete", sessionID, next.length < input.limit)
           })
         })
         .finally(() => {
@@ -234,7 +254,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 )
               })
 
-          const messagesReq = hasMessages ? Promise.resolve() : loadMessages(sessionID, limit)
+          const messagesReq = hasMessages ? Promise.resolve() : loadMessages({ sessionID, limit })
 
           const promise = Promise.all([sessionReq, messagesReq])
             .then(() => {})
@@ -293,8 +313,18 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             if (meta.loading[sessionID]) return
             if (meta.complete[sessionID]) return
 
-            const current = meta.limit[sessionID] ?? chunk
-            await loadMessages(sessionID, current + count)
+            const current = store().message[sessionID]
+            const afterID = current?.[0]?.id
+            if (!afterID) {
+              await loadMessages({ sessionID, limit: count })
+              return
+            }
+            await loadMessages({
+              sessionID,
+              limit: count,
+              afterID,
+              merge: true,
+            })
           },
         },
         fetch: async (count = 10) => {

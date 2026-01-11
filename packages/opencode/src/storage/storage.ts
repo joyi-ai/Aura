@@ -7,6 +7,7 @@ import { Lock } from "../util/lock"
 import { $ } from "bun"
 import { NamedError } from "@opencode-ai/util/error"
 import z from "zod"
+import { StorageSqlite } from "./sqlite"
 
 export namespace Storage {
   const log = Log.create({ service: "storage" })
@@ -212,6 +213,49 @@ export namespace Storage {
     },
   ]
 
+  async function migrateToSqlite(dir: string) {
+    const metaKey = "sqlite-migrated"
+    const migrated = StorageSqlite.metaGet(metaKey)
+    if (migrated) return
+
+    for await (const sessionFile of new Bun.Glob("session/*/*.json").scan({ cwd: dir, absolute: true })) {
+      const session = await Bun.file(sessionFile).json().catch(() => undefined)
+      if (session) StorageSqlite.writeSession(session)
+    }
+
+    for await (const messageFile of new Bun.Glob("message/*/*.json").scan({ cwd: dir, absolute: true })) {
+      const message = await Bun.file(messageFile).json().catch(() => undefined)
+      if (!message) continue
+      if (message.info?.id && message.info?.sessionID) {
+        StorageSqlite.writeMessage(message)
+        continue
+      }
+      if (!message.id || !message.sessionID) continue
+      const partsDir = path.join(dir, "part", message.id)
+      const parts: unknown[] = []
+      if (await fs.exists(partsDir)) {
+        for await (const partFile of new Bun.Glob("*.json").scan({ cwd: partsDir, absolute: true })) {
+          const part = await Bun.file(partFile).json().catch(() => undefined)
+          if (part) parts.push(part)
+        }
+      }
+      parts.sort((a: any, b: any) => (a.id > b.id ? 1 : -1))
+      StorageSqlite.writeMessage({
+        info: message,
+        parts,
+      })
+    }
+
+    for await (const diffFile of new Bun.Glob("session_diff/*.json").scan({ cwd: dir, absolute: true })) {
+      const diffs = await Bun.file(diffFile).json().catch(() => undefined)
+      if (diffs === undefined) continue
+      const sessionID = path.basename(diffFile, ".json")
+      StorageSqlite.writeDiff(sessionID, diffs)
+    }
+
+    StorageSqlite.metaSet(metaKey, "1")
+  }
+
   const state = lazy(async () => {
     const dir = path.join(Global.Path.data, "storage")
     const migration = await Bun.file(path.join(dir, "migration"))
@@ -224,12 +268,33 @@ export namespace Storage {
       await migration(dir).catch(() => log.error("failed to run migration", { index }))
       await Bun.write(path.join(dir, "migration"), (index + 1).toString())
     }
+    await migrateToSqlite(dir)
     return {
       dir,
     }
   })
 
-  export async function remove(key: string[]) {
+  function isMessageKey(key: string[]) {
+    return key.length === 3 && key[0] === "message"
+  }
+
+  function isMessageListKey(key: string[]) {
+    return key.length === 2 && key[0] === "message"
+  }
+
+  function isSessionKey(key: string[]) {
+    return key.length === 3 && key[0] === "session"
+  }
+
+  function isSessionListKey(key: string[]) {
+    return key.length === 2 && key[0] === "session"
+  }
+
+  function isSessionDiffKey(key: string[]) {
+    return key.length === 2 && key[0] === "session_diff"
+  }
+
+  async function removeLegacy(key: string[]) {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
@@ -237,7 +302,7 @@ export namespace Storage {
     })
   }
 
-  export async function read<T>(key: string[]) {
+  async function readLegacy<T>(key: string[]) {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
@@ -247,7 +312,7 @@ export namespace Storage {
     })
   }
 
-  export async function update<T>(key: string[], fn: (draft: T) => void) {
+  async function updateLegacy<T>(key: string[], fn: (draft: T) => void) {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
@@ -259,13 +324,82 @@ export namespace Storage {
     })
   }
 
-  export async function write<T>(key: string[], content: T) {
+  async function writeLegacy<T>(key: string[], content: T) {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
       using _ = await Lock.write(target)
       await Bun.write(target, JSON.stringify(content, null, 2))
     })
+  }
+
+  export async function remove(key: string[]) {
+    await state()
+    if (isMessageKey(key)) {
+      StorageSqlite.removeMessage(key[1], key[2])
+      return
+    }
+    if (isSessionKey(key)) {
+      StorageSqlite.removeSession(key[2])
+      return
+    }
+    if (isSessionDiffKey(key)) {
+      StorageSqlite.removeDiff(key[1])
+      return
+    }
+    return removeLegacy(key)
+  }
+
+  export async function read<T>(key: string[]) {
+    await state()
+    if (isMessageKey(key)) {
+      const row = StorageSqlite.readMessage(key[1], key[2])
+      if (row !== undefined) return row as T
+      throw new NotFoundError({ message: `Resource not found: ${key.join("/")}` })
+    }
+    if (isSessionKey(key)) {
+      const row = StorageSqlite.readSession(key[2])
+      if (row !== undefined) return row as T
+      throw new NotFoundError({ message: `Resource not found: ${key.join("/")}` })
+    }
+    if (isSessionDiffKey(key)) {
+      const row = StorageSqlite.readDiff(key[1])
+      if (row !== undefined) return row as T
+      throw new NotFoundError({ message: `Resource not found: ${key.join("/")}` })
+    }
+    return readLegacy<T>(key)
+  }
+
+  export async function update<T>(key: string[], fn: (draft: T) => void) {
+    await state()
+    if (isSessionKey(key)) {
+      const current = StorageSqlite.readSession(key[2])
+      if (current === undefined) {
+        throw new NotFoundError({ message: `Resource not found: ${key.join("/")}` })
+      }
+      const draft = current as T
+      fn(draft)
+      StorageSqlite.writeSession(draft as StorageSqlite.SessionRecord)
+      return draft
+    }
+    return updateLegacy<T>(key, fn)
+  }
+
+  export async function write<T>(key: string[], content: T) {
+    await state()
+    if (isMessageKey(key)) {
+      StorageSqlite.writeMessage(content as StorageSqlite.MessageRecord)
+      return
+    }
+    if (isSessionKey(key)) {
+      StorageSqlite.writeSession(content as StorageSqlite.SessionRecord)
+      return
+    }
+    if (isSessionDiffKey(key)) {
+      StorageSqlite.writeDiff(key[1], content)
+      return
+    }
+    return writeLegacy(key, content)
   }
 
   async function withErrorHandling<T>(body: () => Promise<T>) {
@@ -280,19 +414,41 @@ export namespace Storage {
   }
 
   const glob = new Bun.Glob("**/*")
-  export async function list(prefix: string[]) {
+  async function listLegacy(prefix: string[]) {
     const dir = await state().then((x) => x.dir)
-    try {
-      const result = await Array.fromAsync(
-        glob.scan({
-          cwd: path.join(dir, ...prefix),
-          onlyFiles: true,
-        }),
-      ).then((results) => results.map((x) => [...prefix, ...x.slice(0, -5).split(path.sep)]))
-      result.sort()
-      return result
-    } catch {
-      return []
+    const result = await Array.fromAsync(
+      glob.scan({
+        cwd: path.join(dir, ...prefix),
+        onlyFiles: true,
+      }),
+    )
+      .then((results) => results.map((x) => [...prefix, ...x.slice(0, -5).split(path.sep)]))
+      .catch(() => [] as string[][])
+    result.sort()
+    return result
+  }
+
+  export async function listMessageIDs(input: { sessionID: string; limit?: number; afterID?: string }) {
+    await state()
+    return StorageSqlite.listMessagesPage({
+      sessionID: input.sessionID,
+      limit: input.limit,
+      afterID: input.afterID,
+    })
+  }
+
+  export async function list(prefix: string[]) {
+    await state()
+    if (isMessageListKey(prefix)) {
+      const sessionID = prefix[1]
+      const rows = StorageSqlite.listMessages(sessionID)
+      return rows.map((id) => [prefix[0], sessionID, id])
     }
+    if (isSessionListKey(prefix)) {
+      const projectID = prefix[1]
+      const rows = StorageSqlite.listSessions(projectID)
+      return rows.map((id) => [prefix[0], projectID, id])
+    }
+    return listLegacy(prefix)
   }
 }

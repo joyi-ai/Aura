@@ -1,7 +1,8 @@
 import { UserMessage } from "@opencode-ai/sdk/v2"
-import { ComponentProps, For, Match, Show, splitProps, Switch } from "solid-js"
+import { ComponentProps, Match, Show, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "./diff-changes"
 import { Tooltip } from "@kobalte/core/tooltip"
+import { Virtualizer, type CustomContainerComponentProps, type CustomItemComponentProps } from "virtua/solid"
 
 export function MessageNav(
   props: ComponentProps<"ul"> & {
@@ -13,39 +14,44 @@ export function MessageNav(
 ) {
   const [local, others] = splitProps(props, ["messages", "current", "size", "onMessageSelect"])
 
-  const content = () => (
-    <ul role="list" data-component="message-nav" data-size={local.size} {...others}>
-      <For each={local.messages}>
-        {(message) => {
-          const handleClick = () => local.onMessageSelect(message)
-
-          return (
-            <li data-slot="message-nav-item">
-              <Switch>
-                <Match when={local.size === "compact"}>
-                  <div data-slot="message-nav-tick-button" data-active={message.id === local.current?.id || undefined}>
-                    <div data-slot="message-nav-tick-line" />
-                  </div>
-                </Match>
-                <Match when={local.size === "normal"}>
-                  <button data-slot="message-nav-message-button" onClick={handleClick}>
-                    <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
-                    <div
-                      data-slot="message-nav-title-preview"
-                      data-active={message.id === local.current?.id || undefined}
-                    >
-                      <Show when={message.summary?.title} fallback="New message">
-                        {message.summary?.title}
-                      </Show>
-                    </div>
-                  </button>
-                </Match>
-              </Switch>
-            </li>
-          )
-        }}
-      </For>
+  const Container = (props: CustomContainerComponentProps) => (
+    <ul role="list" data-component="message-nav" data-size={local.size} style={props.style} ref={props.ref} {...others}>
+      {props.children}
     </ul>
+  )
+
+  const Item = (props: CustomItemComponentProps) => (
+    <li data-slot="message-nav-item" style={props.style} ref={props.ref}>
+      {props.children}
+    </li>
+  )
+
+  const content = () => (
+    <Virtualizer data={local.messages} as={Container} item={Item} overscan={8}>
+      {(message) => {
+        const handleClick = () => local.onMessageSelect(message)
+
+        return (
+          <Switch>
+            <Match when={local.size === "compact"}>
+              <div data-slot="message-nav-tick-button" data-active={message.id === local.current?.id || undefined}>
+                <div data-slot="message-nav-tick-line" />
+              </div>
+            </Match>
+            <Match when={local.size === "normal"}>
+              <button data-slot="message-nav-message-button" onClick={handleClick}>
+                <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
+                <div data-slot="message-nav-title-preview" data-active={message.id === local.current?.id || undefined}>
+                  <Show when={message.summary?.title} fallback="New message">
+                    {message.summary?.title}
+                  </Show>
+                </div>
+              </button>
+            </Match>
+          </Switch>
+        )
+      }}
+    </Virtualizer>
   )
 
   return (

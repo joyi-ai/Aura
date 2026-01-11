@@ -557,12 +557,22 @@ export namespace MessageV2 {
   }
 
   export const stream = fn(Identifier.schema("session"), async function* (sessionID) {
-    const list = await Array.fromAsync(await Storage.list(["message", sessionID]))
-    for (let i = list.length - 1; i >= 0; i--) {
-      yield await get({
+    const cursor = { value: undefined as string | undefined }
+    const limit = 200
+    while (true) {
+      const ids = await Storage.listMessageIDs({
         sessionID,
-        messageID: list[i][2],
+        limit,
+        afterID: cursor.value,
       })
+      if (ids.length === 0) return
+      for (const id of ids) {
+        yield await get({
+          sessionID,
+          messageID: id,
+        })
+      }
+      cursor.value = ids[ids.length - 1]
     }
   })
 

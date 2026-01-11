@@ -65,6 +65,16 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 export namespace Server {
   const log = Log.create({ service: "server" })
 
+  type EventPayload = {
+    type: string
+    properties: Record<string, unknown>
+  }
+
+  type GlobalEvent = {
+    directory: string
+    payload: EventPayload
+  }
+
   /**
    * Create SSE heartbeat interval to prevent client timeouts (WKWebView 60s default)
    */
@@ -76,6 +86,116 @@ export namespace Server {
           : { type: "server.heartbeat", properties: {} }
       stream.writeSSE({ data: JSON.stringify(data) })
     }, 30000)
+  }
+
+  function keyForInstance(event: EventPayload) {
+    if (event.type === "session.status") {
+      const data = event.properties as { sessionID?: string }
+      const id = data.sessionID
+      if (!id) return
+      return `session.status:${id}`
+    }
+    if (event.type === "lsp.updated") {
+      return "lsp.updated"
+    }
+    if (event.type === "message.part.updated") {
+      const data = event.properties as { part?: { messageID?: string; id?: string } }
+      const part = data.part
+      if (!part) return
+      if (!part.messageID) return
+      if (!part.id) return
+      return `message.part.updated:${part.messageID}:${part.id}`
+    }
+  }
+
+  function keyForGlobal(event: GlobalEvent) {
+    const key = keyForInstance(event.payload)
+    if (!key) return
+    return `${event.directory}:${key}`
+  }
+
+  function createEventBuffer<T>(input: {
+    send: (item: T) => Promise<void> | void
+    key: (item: T) => string | undefined
+    interval?: number
+    max?: number
+  }) {
+    const queue: Array<T | undefined> = []
+    const keys = new Map<string, number>()
+    const timer: { value?: ReturnType<typeof setTimeout> } = {}
+    const last = { value: 0 }
+    const busy = { value: false }
+    const interval = input.interval ?? 16
+    const max = input.max ?? 2000
+
+    const rebuildKeys = () => {
+      keys.clear()
+      queue.forEach((item, index) => {
+        if (!item) return
+        const key = input.key(item)
+        if (!key) return
+        keys.set(key, index)
+      })
+    }
+
+    const flush = async () => {
+      if (busy.value) return
+      busy.value = true
+      if (timer.value) {
+        clearTimeout(timer.value)
+        timer.value = undefined
+      }
+      const items = queue.splice(0)
+      keys.clear()
+      if (items.length === 0) {
+        busy.value = false
+        return
+      }
+      last.value = Date.now()
+      for (const item of items) {
+        if (!item) continue
+        await Promise.resolve(input.send(item)).catch(() => undefined)
+      }
+      busy.value = false
+    }
+
+    const schedule = () => {
+      if (timer.value) return
+      const elapsed = Date.now() - last.value
+      const wait = elapsed >= interval ? 0 : interval - elapsed
+      timer.value = setTimeout(() => {
+        void flush()
+      }, wait)
+    }
+
+    const push = (item: T) => {
+      const key = input.key(item)
+      if (key) {
+        const idx = keys.get(key)
+        if (idx !== undefined) {
+          queue[idx] = undefined
+        }
+        keys.set(key, queue.length)
+      }
+      queue.push(item)
+      if (queue.length > max) {
+        const drop = queue.length - max
+        queue.splice(0, drop)
+        rebuildKeys()
+      }
+      schedule()
+    }
+
+    const stop = () => {
+      if (timer.value) {
+        clearTimeout(timer.value)
+        timer.value = undefined
+      }
+      queue.length = 0
+      keys.clear()
+    }
+
+    return { push, flush, stop }
   }
 
   /**
@@ -263,6 +383,14 @@ export namespace Server {
           async (c) => {
             log.info("global event connected")
             return streamSSE(c, async (stream) => {
+              const buffer = createEventBuffer<GlobalEvent>({
+                send: async (event) => {
+                  await stream.writeSSE({
+                    data: JSON.stringify(event),
+                  })
+                },
+                key: keyForGlobal,
+              })
               stream.writeSSE({
                 data: JSON.stringify({
                   payload: {
@@ -271,10 +399,9 @@ export namespace Server {
                   },
                 }),
               })
-              async function handler(event: any) {
-                await stream.writeSSE({
-                  data: JSON.stringify(event),
-                })
+              const handler = (event: { directory?: string; payload: EventPayload }) => {
+                if (!event.directory) return
+                buffer.push({ directory: event.directory, payload: event.payload })
               }
               GlobalBus.on("event", handler)
 
@@ -284,6 +411,7 @@ export namespace Server {
                 stream.onAbort(() => {
                   clearInterval(heartbeat)
                   GlobalBus.off("event", handler)
+                  buffer.stop()
                   resolve()
                   log.info("global event disconnected")
                 })
@@ -1371,6 +1499,7 @@ export namespace Server {
             "query",
             z.object({
               limit: z.coerce.number().optional(),
+              afterID: Identifier.schema("message").optional(),
             }),
           ),
           async (c) => {
@@ -1378,6 +1507,7 @@ export namespace Server {
             const messages = await Session.messages({
               sessionID: c.req.valid("param").sessionID,
               limit: query.limit,
+              afterID: query.afterID,
             })
             return c.json(messages)
           },
@@ -3300,18 +3430,27 @@ export namespace Server {
           async (c) => {
             log.info("event connected")
             return streamSSE(c, async (stream) => {
+              const buffer = createEventBuffer<EventPayload>({
+                send: async (event) => {
+                  await stream.writeSSE({
+                    data: JSON.stringify(event),
+                  })
+                },
+                key: keyForInstance,
+              })
               stream.writeSSE({
                 data: JSON.stringify({
                   type: "server.connected",
                   properties: {},
                 }),
               })
-              const unsub = Bus.subscribeAll(async (event) => {
-                await stream.writeSSE({
-                  data: JSON.stringify(event),
-                })
-                if (event.type === Bus.InstanceDisposed.type) {
-                  stream.close()
+              const unsub = Bus.subscribeAll((event) => {
+                const payload = event as EventPayload
+                buffer.push(payload)
+                if (payload.type === Bus.InstanceDisposed.type) {
+                  void buffer.flush().then(() => {
+                    stream.close()
+                  })
                 }
               })
 
@@ -3321,6 +3460,7 @@ export namespace Server {
                 stream.onAbort(() => {
                   clearInterval(heartbeat)
                   unsub()
+                  buffer.stop()
                   resolve()
                   log.info("event disconnected")
                 })

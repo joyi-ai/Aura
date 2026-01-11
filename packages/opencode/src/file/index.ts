@@ -1,4 +1,5 @@
 import { BusEvent } from "@/bus/bus-event"
+import { Bus } from "@/bus"
 import z from "zod"
 import { $ } from "bun"
 import type { BunFile } from "bun"
@@ -12,6 +13,8 @@ import { Instance } from "../project/instance"
 import { Ripgrep } from "./ripgrep"
 import fuzzysort from "fuzzysort"
 import { Global } from "../global"
+import { FileWatcher } from "./watcher"
+import { Flag } from "../flag/flag"
 
 export namespace File {
   const log = Log.create({ service: "file" })
@@ -119,12 +122,34 @@ export namespace File {
     ),
   }
 
-  const state = Instance.state(async () => {
+  const state = Instance.state(
+    async () => {
     type Entry = { files: string[]; dirs: string[] }
     let cache: Entry = { files: [], dirs: [] }
     let fetching = false
+    const dirty = { value: true }
+    const last = { value: 0 }
+    const useWatcher =
+      Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER && !Flag.OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER
+    const interval = useWatcher ? 30000 : 5000
 
     const isGlobalHome = Instance.directory === Global.Path.home && Instance.project.id === "global"
+    const subs: Array<() => void> = []
+
+    const markDirty = () => {
+      dirty.value = true
+    }
+
+    subs.push(
+      Bus.subscribe(FileWatcher.Event.Updated, () => {
+        markDirty()
+      }),
+    )
+    subs.push(
+      Bus.subscribe(Event.Edited, () => {
+        markDirty()
+      }),
+    )
 
     const fn = async (result: Entry) => {
       // Disable scanning if in root of file system
@@ -163,6 +188,8 @@ export namespace File {
         result.dirs = Array.from(dirs).toSorted()
         cache = result
         fetching = false
+        dirty.value = false
+        last.value = Date.now()
         return
       }
 
@@ -182,21 +209,35 @@ export namespace File {
       }
       cache = result
       fetching = false
+      dirty.value = false
+      last.value = Date.now()
     }
     fn(cache)
 
     return {
       async files() {
         if (!fetching) {
-          fn({
-            files: [],
-            dirs: [],
-          })
+          const now = Date.now()
+          const stale = dirty.value || now - last.value > interval
+          if (stale) {
+            fn({
+              files: [],
+              dirs: [],
+            })
+          }
         }
         return cache
       },
+      subs,
     }
-  })
+  },
+    async (entry) => {
+      const state = await entry
+      for (const unsub of state.subs) {
+        unsub()
+      }
+    },
+  )
 
   export function init() {
     state()

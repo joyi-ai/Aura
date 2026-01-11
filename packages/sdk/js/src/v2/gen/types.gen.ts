@@ -622,6 +622,14 @@ export type EventSessionCompacted = {
   }
 }
 
+export type EventFileWatcherUpdated = {
+  type: "file.watcher.updated"
+  properties: {
+    file: string
+    event: "add" | "change" | "unlink"
+  }
+}
+
 export type EventFileEdited = {
   type: "file.edited"
   properties: {
@@ -858,14 +866,6 @@ export type EventSessionError = {
   }
 }
 
-export type EventFileWatcherUpdated = {
-  type: "file.watcher.updated"
-  properties: {
-    file: string
-    event: "add" | "change" | "unlink"
-  }
-}
-
 export type EventVcsBranchUpdated = {
   type: "vcs.branch.updated"
   properties: {
@@ -949,6 +949,7 @@ export type Event =
   | EventQuestionReplied
   | EventQuestionRejected
   | EventSessionCompacted
+  | EventFileWatcherUpdated
   | EventFileEdited
   | EventTodoUpdated
   | EventTuiPromptAppend
@@ -966,7 +967,6 @@ export type Event =
   | EventSessionDeleted
   | EventSessionDiff
   | EventSessionError
-  | EventFileWatcherUpdated
   | EventVcsBranchUpdated
   | EventPtyCreated
   | EventPtyUpdated
@@ -3780,6 +3780,7 @@ export type SessionMessagesData = {
   query?: {
     directory?: string
     limit?: number
+    afterID?: string
   }
   url: "/session/{sessionID}/message"
 }

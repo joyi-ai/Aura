@@ -44,11 +44,56 @@ export const GrepTool = Tool.define("grep", {
       stderr: "pipe",
     })
 
-    const output = await new Response(proc.stdout).text()
+    const limit = 100
+    const matches: { path: string; lineNum: number; lineText: string }[] = []
+    const state = {
+      buffer: "",
+      truncated: false,
+    }
+
+    const reader = proc.stdout.getReader()
+    const decoder = new TextDecoder()
+
+    while (!state.truncated) {
+      const result = await reader.read()
+      if (result.done) break
+
+      state.buffer += decoder.decode(result.value, { stream: true })
+      const parts = state.buffer.split("\n")
+      state.buffer = parts.pop() ?? ""
+
+      for (const part of parts) {
+        const line = part.endsWith("\r") ? part.slice(0, -1) : part
+        if (!line) continue
+
+        const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
+        if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
+
+        const lineNum = parseInt(lineNumStr, 10)
+        const lineText = lineTextParts.join("|")
+
+        matches.push({
+          path: filePath,
+          lineNum,
+          lineText,
+        })
+
+        if (matches.length >= limit) {
+          state.truncated = true
+          break
+        }
+      }
+    }
+
+    if (state.truncated) {
+      await reader.cancel()
+    }
+    reader.releaseLock()
+
     const errorOutput = await new Response(proc.stderr).text()
     const exitCode = await proc.exited
 
-    if (exitCode === 1) {
+    if (exitCode === 1 && matches.length === 0) {
       return {
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
@@ -56,42 +101,13 @@ export const GrepTool = Tool.define("grep", {
       }
     }
 
-    if (exitCode !== 0) {
+    if (exitCode !== 0 && !state.truncated) {
       throw new Error(`ripgrep failed: ${errorOutput}`)
     }
 
-    // Handle both Unix (\n) and Windows (\r\n) line endings
-    const lines = output.trim().split(/\r?\n/)
-    const matches = []
+    const truncated = state.truncated
 
-    for (const line of lines) {
-      if (!line) continue
-
-      const [filePath, lineNumStr, ...lineTextParts] = line.split("|")
-      if (!filePath || !lineNumStr || lineTextParts.length === 0) continue
-
-      const lineNum = parseInt(lineNumStr, 10)
-      const lineText = lineTextParts.join("|")
-
-      const file = Bun.file(filePath)
-      const stats = await file.stat().catch(() => null)
-      if (!stats) continue
-
-      matches.push({
-        path: filePath,
-        modTime: stats.mtime.getTime(),
-        lineNum,
-        lineText,
-      })
-    }
-
-    matches.sort((a, b) => b.modTime - a.modTime)
-
-    const limit = 100
-    const truncated = matches.length > limit
-    const finalMatches = truncated ? matches.slice(0, limit) : matches
-
-    if (finalMatches.length === 0) {
+    if (matches.length === 0) {
       return {
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
@@ -99,15 +115,15 @@ export const GrepTool = Tool.define("grep", {
       }
     }
 
-    const outputLines = [`Found ${finalMatches.length} matches`]
+    const outputLines = [`Found ${matches.length} matches`]
 
-    let currentFile = ""
-    for (const match of finalMatches) {
-      if (currentFile !== match.path) {
-        if (currentFile !== "") {
+    const current = { value: "" }
+    for (const match of matches) {
+      if (current.value !== match.path) {
+        if (current.value !== "") {
           outputLines.push("")
         }
-        currentFile = match.path
+        current.value = match.path
         outputLines.push(`${match.path}:`)
       }
       const truncatedLineText =
@@ -123,7 +139,7 @@ export const GrepTool = Tool.define("grep", {
     return {
       title: params.pattern,
       metadata: {
-        matches: finalMatches.length,
+        matches: matches.length,
         truncated,
       },
       output: outputLines.join("\n"),

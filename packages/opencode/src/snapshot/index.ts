@@ -10,6 +10,44 @@ import { Instance } from "../project/instance"
 export namespace Snapshot {
   const log = Log.create({ service: "snapshot" })
 
+  async function stageChanged(git: string) {
+    const result =
+      await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-files -m -o -d --exclude-standard -z`
+        .quiet()
+        .cwd(Instance.directory)
+        .nothrow()
+    if (result.exitCode !== 0) {
+      await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
+      return
+    }
+    const status = result.text()
+    if (!status) return
+    const proc = Bun.spawn(
+      [
+        "git",
+        "--git-dir",
+        git,
+        "--work-tree",
+        Instance.worktree,
+        "add",
+        "-A",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+      ],
+      {
+        cwd: Instance.directory,
+        stdin: "pipe",
+        stdout: "ignore",
+        stderr: "ignore",
+      },
+    )
+    const input = proc.stdin
+    if (!input) return
+    input.write(status)
+    input.end()
+    await proc.exited
+  }
+
   export async function track() {
     if (Instance.project.vcs !== "git") return
     const cfg = await Config.get()
@@ -28,7 +66,7 @@ export namespace Snapshot {
       await $`git --git-dir ${git} config core.autocrlf false`.quiet().nothrow()
       log.info("initialized")
     }
-    await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
+    await stageChanged(git)
     const hash = await $`git --git-dir ${git} --work-tree ${Instance.worktree} write-tree`
       .quiet()
       .cwd(Instance.directory)
@@ -46,7 +84,7 @@ export namespace Snapshot {
 
   export async function patch(hash: string): Promise<Patch> {
     const git = gitdir()
-    await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
+    await stageChanged(git)
     const result =
       await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --name-only ${hash} -- .`
         .quiet()
@@ -124,7 +162,7 @@ export namespace Snapshot {
 
   export async function diff(hash: string) {
     const git = gitdir()
-    await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
+    await stageChanged(git)
     const result =
       await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff ${hash} -- .`
         .quiet()
@@ -159,6 +197,7 @@ export namespace Snapshot {
   export async function diffFull(from: string, to: string): Promise<FileDiff[]> {
     const git = gitdir()
     const result: FileDiff[] = []
+    await stageChanged(git)
     for await (const line of $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames --numstat ${from} ${to} -- .`
       .quiet()
       .cwd(Instance.directory)

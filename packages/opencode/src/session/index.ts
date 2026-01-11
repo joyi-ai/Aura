@@ -18,6 +18,7 @@ import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
 import { Worktree } from "@/worktree"
 import { Cache } from "@/cache"
+import { StorageSqlite } from "@/storage/sqlite"
 
 import type { Provider } from "@/provider/provider"
 import { PermissionNext } from "@/permission/next"
@@ -391,19 +392,22 @@ export namespace Session {
     z.object({
       sessionID: Identifier.schema("session"),
       limit: z.number().optional(),
-      afterID: Identifier.schema("message").optional(), // Only load messages after this ID
+      afterID: Identifier.schema("message").optional(), // Only load messages older than this ID
     }),
     async (input) => {
+      const ids = await Storage.listMessageIDs({
+        sessionID: input.sessionID,
+        limit: input.limit,
+        afterID: input.afterID,
+      })
       const result = [] as MessageV2.WithParts[]
-      let foundAfterID = !input.afterID // If no afterID, start collecting immediately
-      for await (const msg of MessageV2.stream(input.sessionID)) {
-        if (input.limit && result.length >= input.limit) break
-        // Skip messages until we find the afterID
-        if (!foundAfterID) {
-          if (msg.info.id === input.afterID) foundAfterID = true
-          continue
-        }
-        result.push(msg)
+      for (const id of ids) {
+        result.push(
+          await MessageV2.get({
+            sessionID: input.sessionID,
+            messageID: id,
+          }),
+        )
       }
       result.reverse()
       return result
@@ -415,7 +419,7 @@ export namespace Session {
       sessionID: Identifier.schema("session"),
     }),
     async (input) => {
-      return Cache.Message.count(input.sessionID)
+      return StorageSqlite.countMessages(input.sessionID)
     },
   )
 
