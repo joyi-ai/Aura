@@ -9,7 +9,10 @@ type AskUserRequest = {
 
 type PlanModeRequest = {
   id: string
+  sessionID: string
+  messageID: string
   callID: string
+  plan: string
 }
 
 type Data = {

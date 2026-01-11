@@ -322,7 +322,6 @@ export function SessionPane(props: SessionPaneProps) {
 
   const multiContainerClassList = () => ({
     "bg-background-base": props.mode === "single",
-    "opacity-60": props.mode === "multi" && !isFocused(),
   })
 
   const handleMultiPaneMouseDown = (event: MouseEvent) => {
@@ -353,6 +352,19 @@ export function SessionPane(props: SessionPaneProps) {
       onMouseLeave={props.mode === "multi" ? headerOverlay.handleMouseLeave : undefined}
       onMouseMove={props.mode === "multi" ? headerOverlay.handleMouseMove : undefined}
     >
+      {/* Dim overlay behind content for multi-pane mode */}
+      <Show when={props.mode === "multi"}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            "z-index": 5,
+            "background-color": "rgba(0, 0, 0, 0.1)",
+            "pointer-events": "none",
+          }}
+        />
+      </Show>
+
       <Show when={props.mode === "multi" && hasMultiplePanes()}>
         <div
           class="pointer-events-none absolute inset-0 z-30 border"
@@ -404,7 +416,7 @@ export function SessionPane(props: SessionPaneProps) {
         </div>
       </Show>
 
-      <div class="flex-1 min-h-0 flex flex-col">
+      <div class="relative z-10 flex-1 min-h-0 flex flex-col">
         {/* Mobile view */}
         <MobileView
           sessionId={sessionId()}

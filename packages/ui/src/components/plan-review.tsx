@@ -18,7 +18,6 @@ export interface PlanReviewProps extends ToolProps {
 export const PlanReview: Component<PlanReviewProps> = (props) => {
   const data = useData()
   const input = () => props.input as ExitPlanModeInput
-  const plan = () => input()?.plan ?? ""
 
   // Find the pending plan review request that matches this tool call
   const pendingRequest = createMemo(() => {
@@ -26,6 +25,9 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
     const requests = data.store.planmode?.[props.sessionID] ?? []
     return requests.find((r) => r.callID === props.callID)
   })
+
+  // Get plan content from the pending request (which reads from PLAN.md) or fall back to tool input
+  const plan = () => pendingRequest()?.plan ?? input()?.plan ?? ""
 
   // Track submission state
   const [isSubmitting, setIsSubmitting] = createSignal(false)

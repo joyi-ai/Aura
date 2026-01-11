@@ -130,5 +130,6 @@ export namespace ProviderRouting {
     "fireworks",
     "cohere",
     "together",
+    "cerebras",
   ] as const
 }

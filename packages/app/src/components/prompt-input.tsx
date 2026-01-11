@@ -49,6 +49,7 @@ import { WorktreeStatusIndicator } from "@/components/session-worktree-indicator
 import { usePlatform } from "@/context/platform"
 import { VoiceButton } from "@/components/voice-button"
 import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
+import type { ModeSettings } from "@/modes/types"
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, "application/pdf"]
@@ -169,7 +170,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
   const working = createMemo(() => status()?.type !== "idle")
   const [submitting, setSubmitting] = createSignal(false)
-  const modePayload = createMemo(() => {
+  type ModePayload = {
+    id: string
+    settings?: ModeSettings
+  }
+  const modePayload = createMemo<ModePayload | undefined>(() => {
     const current = local.mode.current()
     if (!current) return undefined
     return {
@@ -177,6 +182,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       settings: current.settings,
     }
   })
+  const modeKey = (value: ModePayload | undefined) => {
+    if (!value) return ""
+    return `${value.id}:${JSON.stringify(value.settings ?? null)}`
+  }
 
   const [store, setStore] = createStore<{
     popover: "at" | "slash" | null
@@ -276,8 +285,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   createEffect(
     on(
       () => [effectiveSessionId(), modePayload()] as const,
-      ([sessionId, mode]) => {
-        if (!sessionId || !mode) return
+      ([sessionId, mode], prev) => {
+        if (!sessionId || !mode || !prev) return
+        const prevSessionId = prev[0]
+        if (!prevSessionId) return
+        if (prevSessionId !== sessionId) return
+        const prevMode = prev[1]
+        if (!prevMode) return
+        if (modeKey(prevMode) === modeKey(mode)) return
         sdk.client.session.update({ sessionID: sessionId, mode }).catch(() => {})
       },
       { defer: true },

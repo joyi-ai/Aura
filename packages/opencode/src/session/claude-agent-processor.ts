@@ -161,6 +161,8 @@ export namespace ClaudeAgentProcessor {
     messageID: string
     toolParts: Map<string, MessageV2.ToolPart>
     agentSessionID?: string
+    /** Path to the plan file for this session (tracked when agent writes to ~/.claude/plans/) */
+    planFilePath?: string
   }
 
   /**
@@ -271,13 +273,69 @@ export namespace ClaudeAgentProcessor {
         }
       }
 
+      // Track plan file writes - when agent writes/edits ~/.claude/plans/, remember the path
+      if (toolName === "Write" || toolName === "Edit") {
+        const writeInput = input as { file_path?: string; filePath?: string }
+        const filePath = writeInput.file_path ?? writeInput.filePath
+        if (filePath) {
+          const plansDir = path.join(os.homedir(), ".claude", "plans")
+          const normalizedPath = path.normalize(filePath)
+          const normalizedPlansDir = path.normalize(plansDir)
+          if (normalizedPath.startsWith(normalizedPlansDir)) {
+            ctx.planFilePath = filePath
+            log.info("tracked plan file write", { path: filePath, sessionID: ctx.sessionID, tool: toolName })
+          }
+        }
+      }
+
       // Handle ExitPlanMode - wait for user to approve/reject the plan
       if (toolName === "ExitPlanMode") {
         const planInput = input as { plan?: string }
 
+        // Try to read plan content from the plan file if not provided in input
+        let planContent = planInput.plan ?? ""
+        if (!planContent) {
+          try {
+            // First, try to use the tracked plan file path from this session
+            if (ctx.planFilePath) {
+              const file = Bun.file(ctx.planFilePath)
+              if (await file.exists()) {
+                planContent = await file.text()
+                log.info("read plan content from tracked file", { path: ctx.planFilePath, length: planContent.length })
+              }
+            }
+
+            // Fallback: Look for the most recent plan file in ~/.claude/plans/
+            if (!planContent) {
+              const plansDir = path.join(os.homedir(), ".claude", "plans")
+              const glob = new Bun.Glob("*.md")
+              const planFiles: { path: string; mtime: number }[] = []
+              for await (const file of glob.scan({ cwd: plansDir, absolute: true })) {
+                const stat = await Bun.file(file).stat()
+                if (stat) {
+                  planFiles.push({ path: file, mtime: stat.mtime.getTime() })
+                }
+              }
+              // Sort by modification time, newest first
+              planFiles.sort((a, b) => b.mtime - a.mtime)
+              if (planFiles.length > 0) {
+                const newestPlan = planFiles[0]
+                // Only read if modified within the last hour (likely current session's plan)
+                const oneHourAgo = Date.now() - 60 * 60 * 1000
+                if (newestPlan.mtime > oneHourAgo) {
+                  planContent = await Bun.file(newestPlan.path).text()
+                  log.info("read plan content from most recent file (fallback)", { path: newestPlan.path, length: planContent.length })
+                }
+              }
+            }
+          } catch (e) {
+            log.warn("failed to read plan file", { error: e })
+          }
+        }
+
         log.info("intercepting ExitPlanMode tool", {
           sessionID: ctx.sessionID,
-          planLength: planInput.plan?.length,
+          planLength: planContent.length,
         })
 
         try {
@@ -285,7 +343,7 @@ export namespace ClaudeAgentProcessor {
             sessionID: ctx.sessionID,
             messageID: ctx.messageID,
             callID: options.toolUseID ?? Identifier.ascending("tool"),
-            plan: planInput.plan ?? "",
+            plan: planContent,
           })
 
           return {
