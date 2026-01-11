@@ -1,8 +1,7 @@
 import { UserMessage } from "@opencode-ai/sdk/v2"
-import { ComponentProps, Match, Show, splitProps, Switch } from "solid-js"
+import { ComponentProps, For, Match, Show, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "./diff-changes"
 import { Tooltip } from "@kobalte/core/tooltip"
-import { Virtualizer, type CustomContainerComponentProps, type CustomItemComponentProps } from "virtua/solid"
 
 export function MessageNav(
   props: ComponentProps<"ul"> & {
@@ -13,45 +12,55 @@ export function MessageNav(
   },
 ) {
   const [local, others] = splitProps(props, ["messages", "current", "size", "onMessageSelect"])
+  const compactLimit = 4
 
-  const Container = (props: CustomContainerComponentProps) => (
-    <ul role="list" data-component="message-nav" data-size={local.size} style={props.style} ref={props.ref} {...others}>
-      {props.children}
-    </ul>
-  )
+  function compactMessages(messages: UserMessage[], current: UserMessage | undefined) {
+    if (messages.length <= compactLimit) return messages
 
-  const Item = (props: CustomItemComponentProps) => (
-    <li data-slot="message-nav-item" style={props.style} ref={props.ref}>
-      {props.children}
-    </li>
-  )
+    const currentId = current?.id
+    if (!currentId) return messages.slice(-compactLimit)
+
+    const currentIndex = messages.findIndex((message) => message.id === currentId)
+    if (currentIndex === -1) return messages.slice(-compactLimit)
+
+    const maxStart = messages.length - compactLimit
+    const start = Math.max(0, Math.min(currentIndex - (compactLimit - 1), maxStart))
+    return messages.slice(start, start + compactLimit)
+  }
 
   const content = () => (
-    <Virtualizer data={local.messages} as={Container} item={Item} overscan={8}>
-      {(message) => {
-        const handleClick = () => local.onMessageSelect(message)
+    <ul role="list" data-component="message-nav" data-size={local.size} {...others}>
+      <For each={local.size === "compact" ? compactMessages(local.messages, local.current) : local.messages}>
+        {(message) => {
+          const handleClick = () => local.onMessageSelect(message)
 
-        return (
-          <Switch>
-            <Match when={local.size === "compact"}>
-              <div data-slot="message-nav-tick-button" data-active={message.id === local.current?.id || undefined}>
-                <div data-slot="message-nav-tick-line" />
-              </div>
-            </Match>
-            <Match when={local.size === "normal"}>
-              <button data-slot="message-nav-message-button" onClick={handleClick}>
-                <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
-                <div data-slot="message-nav-title-preview" data-active={message.id === local.current?.id || undefined}>
-                  <Show when={message.summary?.title} fallback="New message">
-                    {message.summary?.title}
-                  </Show>
-                </div>
-              </button>
-            </Match>
-          </Switch>
-        )
-      }}
-    </Virtualizer>
+          return (
+            <li data-slot="message-nav-item">
+              <Switch>
+                <Match when={local.size === "compact"}>
+                  <div data-slot="message-nav-tick-button" data-active={message.id === local.current?.id || undefined}>
+                    <div data-slot="message-nav-tick-line" />
+                  </div>
+                </Match>
+                <Match when={local.size === "normal"}>
+                  <button data-slot="message-nav-message-button" onClick={handleClick}>
+                    <DiffChanges changes={message.summary?.diffs ?? []} variant="bars" />
+                    <div
+                      data-slot="message-nav-title-preview"
+                      data-active={message.id === local.current?.id || undefined}
+                    >
+                      <Show when={message.summary?.title} fallback="New message">
+                        {message.summary?.title}
+                      </Show>
+                    </div>
+                  </button>
+                </Match>
+              </Switch>
+            </li>
+          )
+        }}
+      </For>
+    </ul>
   )
 
   return (

@@ -10,6 +10,10 @@
     width: 240px;
     gap: 4px;
   }
+
+  &[data-size="compact"] {
+    width: 24px;
+  }
 }
 
 [data-slot="message-nav-item"] {
@@ -28,7 +32,7 @@
   align-items: center;
   justify-content: flex-start;
   height: 12px;
-  width: 24px;
+  width: 100%;
   border: none;
   background: none;
   padding: 0;
@@ -46,6 +50,16 @@
   transition:
     width 0.2s,
     background-color 0.2s;
+}
+
+@supports (width: 1cqw) {
+  [data-component="message-nav"][data-size="compact"] {
+    width: clamp(12px, 3cqw, 24px);
+  }
+
+  [data-slot="message-nav-tick-line"] {
+    width: clamp(8px, 2cqw, 16px);
+  }
 }
 
 [data-slot="message-nav-tick-button"]:hover [data-slot="message-nav-tick-line"] {

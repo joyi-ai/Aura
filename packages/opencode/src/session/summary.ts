@@ -27,9 +27,15 @@ export namespace SessionSummary {
     }),
     async (input) => {
       const all = await Session.messages({ sessionID: input.sessionID })
+      const msg = all.find((m) => m.info.id === input.messageID)
+      if (!msg) {
+        await summarizeSession({ sessionID: input.sessionID, messages: all })
+        return
+      }
+      const isClaudeAgent = msg.info.role === "user" && msg.info.model.providerID === "claude-agent"
       await Promise.all([
         summarizeSession({ sessionID: input.sessionID, messages: all }),
-        summarizeMessage({ messageID: input.messageID, messages: all }),
+        ...(isClaudeAgent ? [] : [summarizeMessage({ messageID: input.messageID, messages: all })]),
       ])
     },
   )
