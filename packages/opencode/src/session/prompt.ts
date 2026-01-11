@@ -32,6 +32,7 @@ import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
 import { $, fileURLToPath } from "bun"
+import { pathToFileURL } from "url"
 import { ConfigMarkdown } from "../config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/util/error"
@@ -49,6 +50,7 @@ import { ClaudeAgent } from "@/provider/claude-agent"
 import { ClaudePlugin } from "@/claude-plugin"
 import { CodexProcessor } from "./codex-processor"
 import { SessionMode } from "./mode"
+import { Worktree } from "@/worktree"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -168,6 +170,58 @@ export namespace SessionPrompt {
     })
   }
 
+  async function ensureWorktree(session: Session.Info) {
+    if (session.worktree?.path) return session
+    if (session.worktreeRequested !== true) return session
+    if (Instance.project.vcs !== "git") return session
+
+    const info = await Worktree.create({
+      sessionID: session.id,
+      cleanup: session.worktreeCleanup,
+    })
+
+    return Session.update(session.id, (draft) => {
+      draft.worktree = info
+      draft.directory = info.path
+    })
+  }
+
+  function isWithin(root: string, file: string) {
+    const rel = path.relative(root, file)
+    if (!rel) return true
+    if (rel.startsWith("..")) return false
+    if (path.isAbsolute(rel)) return false
+    return true
+  }
+
+  function remapFileUrl(url: string) {
+    if (!url.startsWith("file:")) return url
+    if (Instance.project.vcs !== "git") return url
+    if (Instance.project.worktree === Instance.directory) return url
+
+    const base = new URL(url)
+    const file = fileURLToPath(base)
+    if (isWithin(Instance.directory, file)) return url
+    if (!isWithin(Instance.project.worktree, file)) return url
+
+    const rel = path.relative(Instance.project.worktree, file)
+    const target = path.join(Instance.directory, rel)
+    const next = pathToFileURL(target)
+    next.search = base.search
+    return next.toString()
+  }
+
+  function remapPromptInput(input: PromptInput, session: Session.Info) {
+    if (!session.worktree?.path) return input
+    const parts = input.parts.map((part) => {
+      if (part.type !== "file") return part
+      const url = remapFileUrl(part.url)
+      if (url === part.url) return part
+      return { ...part, url }
+    })
+    return { ...input, parts }
+  }
+
   async function assertAgentAllowed(sessionID: string, name: string) {
     const mode = SessionMode.get(sessionID)
     if (!SessionMode.isAgentAllowed(mode, name)) {
@@ -198,7 +252,11 @@ export namespace SessionPrompt {
     SessionMode.set(session.id, session.mode)
     await applyMode(session, input.mode)
 
-    const message = await createUserMessage(input)
+    const current = await ensureWorktree(session)
+    const message = await Instance.provide({
+      directory: current.directory,
+      fn: () => createUserMessage(remapPromptInput(input, current)),
+    })
 
     // Extract prompt text from parts for hook
     const promptText = message.parts
@@ -212,7 +270,7 @@ export namespace SessionPrompt {
       // Trigger UserPromptSubmit hook (skipped for sub-sessions)
       await ClaudePlugin.Hooks.trigger("UserPromptSubmit", {
         sessionID: input.sessionID,
-        parentSessionId: session.parentID,
+        parentSessionId: current.parentID,
         messageID: message.info.id,
         prompt: promptText,
       })
@@ -242,8 +300,8 @@ export namespace SessionPrompt {
       })
     }
     if (permissions.length > 0) {
-      session.permission = permissions
-      await Session.update(session.id, (draft) => {
+      current.permission = permissions
+      await Session.update(current.id, (draft) => {
         draft.permission = permissions
       })
     }

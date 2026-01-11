@@ -92,6 +92,8 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
     const currentModel = local.model.current()
     const currentAgent = local.agent.current()
     const currentVariant = local.model.variant.current()
+    const currentMode = local.mode.current()
+    const currentThinking = local.model.thinking.current()
 
     const newPaneId = multiPane.addPane(props.directory)
     if (newPaneId) {
@@ -99,6 +101,8 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
         agent: currentAgent?.name,
         model: currentModel ? { providerID: currentModel.provider.id, modelID: currentModel.id } : undefined,
         variant: currentVariant,
+        modeId: currentMode?.id,
+        thinking: currentThinking,
       })
     }
   }

@@ -35,6 +35,8 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
     agent: string | undefined
     model: { providerID: string; modelID: string } | undefined
     variant: string | undefined
+    modeId: string | undefined
+    thinking: boolean | undefined
   }
 
   const paneSnapshots = new Map<string, PaneSnapshot>()
@@ -46,9 +48,14 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
   function restorePaneState(paneId: string) {
     const cached = paneCache.get(paneId)
     if (!cached) return
-    if (cached.agent) local.agent.set(cached.agent)
-    if (cached.model) local.model.set(cached.model)
-    if (cached.variant !== undefined) local.model.variant.set(cached.variant)
+    if (cached.modeId) local.mode.set(cached.modeId)
+    queueMicrotask(() => {
+      if (props.paneId !== paneId) return
+      if (cached.agent) local.agent.set(cached.agent)
+      if (cached.model) local.model.set(cached.model)
+      if (cached.variant !== undefined) local.model.variant.set(cached.variant)
+      if (cached.thinking !== undefined) local.model.thinking.set(cached.thinking)
+    })
     if (cached.prompt && !prompt.dirty()) prompt.set(cached.prompt)
   }
 
@@ -62,6 +69,8 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       agent: currentAgent?.name,
       model: currentModel ? { providerID: currentModel.provider.id, modelID: currentModel.id } : undefined,
       variant: local.model.variant.current(),
+      modeId: local.mode.current()?.id,
+      thinking: local.model.thinking.current(),
     }
   }
 
@@ -78,6 +87,8 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       cache.model = state.model
     }
     cache.variant = state.variant
+    cache.modeId = state.modeId
+    cache.thinking = state.thinking
     paneCache.set(paneId, cache)
   }
 

@@ -1,7 +1,9 @@
 import { createStore, produce } from "solid-js/store"
 import { batch, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { showToast } from "@opencode-ai/ui/toast"
 import { triggerShiftingGradient } from "@/components/shifting-gradient"
+import { useGlobalSDK } from "@/context/global-sdk"
 
 export type PaneConfig = {
   id: string
@@ -49,6 +51,7 @@ function calculateLayout(paneCount: number): PaneLayout {
 export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleContext({
   name: "MultiPane",
   init: () => {
+    const globalSDK = useGlobalSDK()
     const [store, setStore] = createStore<MultiPaneState>({
       panes: [],
       currentPage: 0,
@@ -272,33 +275,67 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         })
       },
 
-      clonePane(id: string) {
+      async clonePane(id: string) {
         const pane = store.panes.find((p) => p.id === id)
         if (!pane || store.panes.length >= MAX_TOTAL_PANES) return undefined
 
-        const newId = generatePaneId()
-        const clonedPane: PaneConfig = {
-          id: newId,
-          directory: pane.directory,
-          sessionId: pane.sessionId,
+        const insert = (sessionId?: string, directory?: string) => {
+          if (store.panes.length >= MAX_TOTAL_PANES) return undefined
+          const index = store.panes.findIndex((p) => p.id === id)
+          if (index === -1) return undefined
+
+          const newId = generatePaneId()
+          const clonedPane: PaneConfig = {
+            id: newId,
+            directory,
+            sessionId,
+          }
+
+          const cloneIndex = index + 1
+          const newPanes = [...store.panes]
+          newPanes.splice(cloneIndex, 0, clonedPane)
+
+          batch(() => {
+            setStore("panes", newPanes)
+            setStore("focusedPaneId", newId)
+          })
+
+          const newPage = Math.floor(cloneIndex / MAX_PANES_PER_PAGE)
+          if (newPage !== store.currentPage) {
+            setStore("currentPage", newPage)
+          }
+
+          return newId
         }
 
-        const index = store.panes.findIndex((p) => p.id === id)
-        const cloneIndex = index + 1
-        const newPanes = [...store.panes]
-        newPanes.splice(cloneIndex, 0, clonedPane)
-
-        batch(() => {
-          setStore("panes", newPanes)
-          setStore("focusedPaneId", newId)
-        })
-
-        const newPage = Math.floor(cloneIndex / MAX_PANES_PER_PAGE)
-        if (newPage !== store.currentPage) {
-          setStore("currentPage", newPage)
+        if (!pane.sessionId) {
+          return insert(pane.sessionId, pane.directory)
         }
 
-        return newId
+        if (!pane.directory) {
+          showToast({
+            title: "Unable to clone session",
+            description: "Missing project directory for this session.",
+          })
+          return undefined
+        }
+
+        const created = await globalSDK.client.session
+          .fork({
+            sessionID: pane.sessionId,
+            directory: pane.directory,
+          })
+          .then((result) => result.data)
+          .catch(() => {
+            showToast({
+              title: "Unable to clone session",
+              description: "Failed to fork session.",
+            })
+            return undefined
+          })
+
+        if (!created) return undefined
+        return insert(created.id, created.directory ?? pane.directory)
       },
 
       toggleMaximize(id: string) {

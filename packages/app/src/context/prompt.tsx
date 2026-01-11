@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, type Accessor } from "solid-js"
+import { batch, createMemo, createSignal, type Accessor } from "solid-js"
 import { useParams } from "@solidjs/router"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
@@ -36,6 +36,19 @@ export interface ImageAttachmentPart {
 
 export type ContentPart = TextPart | FileAttachmentPart | AgentPart | ImageAttachmentPart
 export type Prompt = ContentPart[]
+export type PromptAction = {
+  sessionID: string
+  messageID: string
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  variant?: string
+  system?: string
+  thinking?: boolean
+  claudeCodeFlow?: boolean
+}
 
 export type FileContextItem = {
   type: "file"
@@ -172,6 +185,7 @@ function createPromptContext(paneId?: string | Accessor<string | undefined>) {
   const [paneStore, setPaneStore] = createStore<PromptStore>({
     entries: {},
   })
+  const [action, setAction] = createSignal<PromptAction | undefined>()
 
   const key = createMemo(() => `${params.dir}/prompt${params.id ? "/" + params.id : ""}.v1`)
   const [store, setStore, _, ready] = persisted(
@@ -205,7 +219,19 @@ function createPromptContext(paneId?: string | Accessor<string | undefined>) {
     return ready()
   }
 
-  return createPromptMethods(() => currentEntry(), updateEntry, isReady)
+  const methods = createPromptMethods(() => currentEntry(), updateEntry, isReady)
+  return {
+    ...methods,
+    action: {
+      current: action,
+      set(next: PromptAction) {
+        setAction(next)
+      },
+      clear() {
+        setAction(undefined)
+      },
+    },
+  }
 }
 
 function createPromptMethods(

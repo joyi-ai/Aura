@@ -5,6 +5,8 @@ export type PaneCache = {
   agent?: string
   model?: { providerID: string; modelID: string }
   variant?: string
+  modeId?: string
+  thinking?: boolean
 }
 
 export const paneCache = new Map<string, PaneCache>()

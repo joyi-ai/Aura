@@ -1269,10 +1269,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
       let existing = info()
       if (!existing) {
-        // TODO: worktree support pending SDK regeneration
-        // const worktreeEnabled = layout.worktree.enabled()
-        // const worktreeCleanup = layout.worktree.cleanup()
-        const created = await sdk.client.session.create({ mode: modePayload() })
+        const worktreeEnabled = layout.worktree.enabled()
+        const worktreeCleanup = layout.worktree.cleanup()
+        const created = await sdk.client.session.create({
+          mode: modePayload(),
+          ...(worktreeEnabled ? { useWorktree: true, worktreeCleanup } : {}),
+        })
         existing = created.data ?? undefined
         if (existing) {
           if (props.onSessionCreated) {

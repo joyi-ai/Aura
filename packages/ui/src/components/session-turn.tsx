@@ -17,6 +17,7 @@ import { getToolInfo } from "./message-part"
 import { DiffChanges } from "./diff-changes"
 import { Typewriter } from "./typewriter"
 import { Message, Part } from "./message-part"
+import { MessageActions, type MessageActionHandlers } from "./message-actions"
 import { Markdown } from "./markdown"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -137,6 +138,12 @@ function StepsContainer(props: {
   )
 }
 
+type SessionMessageActions = {
+  onEdit?: (message: MessageType) => void
+  onRetry?: (message: MessageType) => void
+  onDelete?: (message: MessageType) => void
+}
+
 function AssistantMessageItem(props: {
   message: AssistantMessage
   responsePartId: string | undefined
@@ -184,6 +191,7 @@ export function SessionTurn(
     disableSticky?: boolean
     onStepsExpandedToggle?: () => void
     onUserInteracted?: () => void
+    actions?: SessionMessageActions
     classes?: {
       root?: string
       content?: string
@@ -222,6 +230,21 @@ export function SessionTurn(
     if (!msg || msg.role !== "user") return undefined
 
     return msg
+  })
+
+  const messageActions = createMemo<MessageActionHandlers | undefined>(() => {
+    const msg = message()
+    const actions = props.actions
+    if (!msg || !actions) return undefined
+    const onEdit = actions.onEdit
+    const onRetry = actions.onRetry
+    const onDelete = actions.onDelete
+    if (!onEdit && !onRetry && !onDelete) return undefined
+    return {
+      onEdit: onEdit ? () => onEdit(msg) : undefined,
+      onRetry: onRetry ? () => onRetry(msg) : undefined,
+      onDelete: onDelete ? () => onDelete(msg) : undefined,
+    }
   })
 
   const lastUserMessageID = createMemo(() => {
@@ -567,7 +590,7 @@ export function SessionTurn(
                     </Show>
                     {/* User Message */}
                     <div data-slot="session-turn-message-content">
-                      <Message message={msg()} parts={parts()} />
+                      <Message message={msg()} parts={parts()} actions={messageActions()} />
                     </div>
                     {/* Working indicator - shows when working but no steps yet */}
                     <Show when={working() && allToolParts().length === 0}>
@@ -603,7 +626,12 @@ export function SessionTurn(
                     </Show>
                     {/* Response */}
                     <Show when={!working() && (response() || hasDiffs())}>
-                      <div data-slot="session-turn-summary-section">
+                      <div data-slot="session-turn-summary-section" data-component="message-wrapper" data-role="assistant">
+                        <MessageActions
+                          onEdit={messageActions()?.onEdit}
+                          onRetry={messageActions()?.onRetry}
+                          onDelete={messageActions()?.onDelete}
+                        />
                         <div data-slot="session-turn-summary-header">
                           <h2 data-slot="session-turn-summary-title">Response</h2>
                           <Markdown

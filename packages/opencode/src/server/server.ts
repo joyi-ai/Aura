@@ -197,6 +197,17 @@ export namespace Server {
     return { push, flush, stop }
   }
 
+  function sessionCacheData(session: Session.Info) {
+    const data = {
+      ...(session.mode ? { mode: session.mode } : {}),
+      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
+      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
+    }
+    const has = data.mode || data.worktreeRequested || data.worktreeCleanup
+    if (!has) return undefined
+    return data
+  }
+
   /**
    * Populate cache from filesystem sessions
    */
@@ -224,6 +235,7 @@ export namespace Server {
           : undefined,
         share: session.share,
         worktree: session.worktree,
+        data: sessionCacheData(session),
       })
     }
   }
@@ -233,6 +245,13 @@ export namespace Server {
    */
   function cacheRowToSessionInfo(row: ReturnType<typeof Cache.Session.read>): Session.Info | null {
     if (!row) return null
+    const data = row.data
+      ? (JSON.parse(row.data) as {
+          mode?: SessionMode.Info
+          worktreeRequested?: boolean
+          worktreeCleanup?: Worktree.CleanupMode
+        })
+      : undefined
     return {
       id: row.id as `session_${string}`,
       projectID: row.projectID,
@@ -258,6 +277,9 @@ export namespace Server {
         row.worktree_path && row.worktree_branch
           ? { path: row.worktree_path, branch: row.worktree_branch, cleanup: "ask" as const }
           : undefined,
+      worktreeRequested: data?.worktreeRequested,
+      worktreeCleanup: data?.worktreeCleanup,
+      mode: data?.mode,
     }
   }
 
@@ -1044,6 +1066,7 @@ export namespace Server {
                 : undefined,
               share: session.share,
               worktree: session.worktree,
+              data: sessionCacheData(session),
             })
 
             return c.json(session)

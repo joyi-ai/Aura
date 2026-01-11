@@ -48,7 +48,7 @@ export function PaneGrid(props: PaneGridProps) {
           break
         case "clone":
           if (focusedId) {
-            multiPane.clonePane(focusedId)
+            void multiPane.clonePane(focusedId)
           }
           break
         case "expand":

@@ -37,6 +37,7 @@ import { AskUserQuestion } from "./ask-user-question"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
+import { MessageActions, type MessageActionHandlers } from "./message-actions"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/util/path"
 import { checksum } from "@opencode-ai/util/encode"
 import { createAutoScroll } from "../hooks"
@@ -82,6 +83,7 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
 export interface MessageProps {
   message: MessageType
   parts: PartType[]
+  actions?: MessageActionHandlers
 }
 
 export interface MessagePartProps {
@@ -253,7 +255,13 @@ export function Message(props: MessageProps) {
   return (
     <Switch>
       <Match when={props.message.role === "user" && props.message}>
-        {(userMessage) => <UserMessageDisplay message={userMessage() as UserMessage} parts={props.parts} />}
+        {(userMessage) => (
+          <UserMessageDisplay
+            message={userMessage() as UserMessage}
+            parts={props.parts}
+            actions={props.actions}
+          />
+        )}
       </Match>
       <Match when={props.message.role === "assistant" && props.message}>
         {(assistantMessage) => (
@@ -277,8 +285,13 @@ export function AssistantMessageDisplay(props: { message: AssistantMessage; part
   return <For each={filteredParts()}>{(part) => <Part part={part} message={props.message} />}</For>
 }
 
-export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[] }) {
+export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; actions?: MessageActionHandlers }) {
   const dialog = useDialog()
+  const actions = () => props.actions
+  const hasActions = createMemo(() => {
+    const current = actions()
+    return !!(current?.onEdit || current?.onRetry || current?.onDelete)
+  })
 
   const textPart = createMemo(
     () => props.parts?.find((p) => p.type === "text" && !(p as TextPart).synthetic) as TextPart | undefined,
@@ -309,40 +322,53 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
   }
 
   return (
-    <div data-component="user-message">
-      <Show when={attachments().length > 0}>
-        <div data-slot="user-message-attachments">
-          <For each={attachments()}>
-            {(file) => (
-              <div
-                data-slot="user-message-attachment"
-                data-type={file.mime.startsWith("image/") ? "image" : "file"}
-                data-clickable={file.mime.startsWith("image/") && !!file.url}
-                onClick={() => {
-                  if (file.mime.startsWith("image/") && file.url) {
-                    openImagePreview(file.url, file.filename)
-                  }
-                }}
-              >
-                <Show
-                  when={file.mime.startsWith("image/") && file.url}
-                  fallback={
-                    <div data-slot="user-message-attachment-icon">
-                      <Icon name="folder" />
-                    </div>
-                  }
+    <div data-component="message-wrapper" data-role="user">
+      <div data-component="user-message">
+        <Show when={attachments().length > 0}>
+          <div data-slot="user-message-attachments">
+            <For each={attachments()}>
+              {(file) => (
+                <div
+                  data-slot="user-message-attachment"
+                  data-type={file.mime.startsWith("image/") ? "image" : "file"}
+                  data-clickable={file.mime.startsWith("image/") && !!file.url}
+                  onClick={() => {
+                    if (file.mime.startsWith("image/") && file.url) {
+                      openImagePreview(file.url, file.filename)
+                    }
+                  }}
                 >
-                  <img data-slot="user-message-attachment-image" src={file.url} alt={file.filename ?? "attachment"} />
-                </Show>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-      <Show when={text()}>
-        <div data-slot="user-message-text">
-          <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
-        </div>
+                  <Show
+                    when={file.mime.startsWith("image/") && file.url}
+                    fallback={
+                      <div data-slot="user-message-attachment-icon">
+                        <Icon name="folder" />
+                      </div>
+                    }
+                  >
+                    <img
+                      data-slot="user-message-attachment-image"
+                      src={file.url}
+                      alt={file.filename ?? "attachment"}
+                    />
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={text()}>
+          <div data-slot="user-message-text">
+            <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+          </div>
+        </Show>
+      </div>
+      <Show when={hasActions()}>
+        <MessageActions
+          onEdit={actions()?.onEdit}
+          onRetry={actions()?.onRetry}
+          onDelete={actions()?.onDelete}
+        />
       </Show>
     </div>
   )

@@ -32,7 +32,13 @@ export namespace Session {
    */
   export function fromCacheRow(row: Cache.SessionRow | null): Session.Info | null {
     if (!row) return null
-    const data = row.data ? (JSON.parse(row.data) as { mode?: SessionMode.Info }) : undefined
+    const data = row.data
+      ? (JSON.parse(row.data) as {
+          mode?: SessionMode.Info
+          worktreeRequested?: boolean
+          worktreeCleanup?: Worktree.CleanupMode
+        })
+      : undefined
     return {
       id: row.id as `session_${string}`,
       projectID: row.projectID,
@@ -58,6 +64,8 @@ export namespace Session {
         row.worktree_path && row.worktree_branch
           ? { path: row.worktree_path, branch: row.worktree_branch, cleanup: "ask" as const }
           : undefined,
+      worktreeRequested: data?.worktreeRequested,
+      worktreeCleanup: data?.worktreeCleanup,
       mode: data?.mode,
     }
   }
@@ -73,6 +81,17 @@ export namespace Session {
     return new RegExp(
       `^(${parentTitlePrefix}|${childTitlePrefix})\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$`,
     ).test(title)
+  }
+
+  function cacheData(session: Info) {
+    const data = {
+      ...(session.mode ? { mode: session.mode } : {}),
+      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
+      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
+    }
+    const has = data.mode || data.worktreeRequested || data.worktreeCleanup
+    if (!has) return undefined
+    return data
   }
 
   export const Info = z
@@ -113,6 +132,8 @@ export namespace Session {
         .optional(),
       mode: SessionMode.Info.optional(),
       worktree: Worktree.Info.optional(),
+      worktreeRequested: z.boolean().optional(),
+      worktreeCleanup: Worktree.CleanupMode.optional(),
     })
     .meta({
       ref: "Session",
@@ -249,35 +270,22 @@ export namespace Session {
     mode?: SessionMode.Info
   }) {
     const sessionId = Identifier.descending("session", input.id)
-    let worktreeInfo: Worktree.Info | undefined
-    let sessionDirectory = input.directory
     const mode = SessionMode.normalize(input.mode)
-
-    // Create worktree if requested and project is git-managed
-    if (input.useWorktree && Instance.project.vcs === "git") {
-      try {
-        worktreeInfo = await Worktree.create({
-          sessionID: sessionId,
-          cleanup: input.worktreeCleanup,
-        })
-        sessionDirectory = worktreeInfo.path
-        log.info("created worktree for session", { sessionID: sessionId, path: worktreeInfo.path })
-      } catch (err) {
-        log.warn("failed to create worktree, falling back to normal session", { error: err })
-        // Continue without worktree
-      }
-    }
+    const worktreeRequested = input.useWorktree === true && Instance.project.vcs === "git"
+    const worktreeCleanup = worktreeRequested ? input.worktreeCleanup : undefined
 
     const result: Info = {
       id: sessionId,
       version: Installation.VERSION,
       projectID: Instance.project.id,
-      directory: sessionDirectory,
+      directory: input.directory,
       parentID: input.parentID,
       title: input.title ?? createDefaultTitle(!!input.parentID),
       permission: input.permission,
       mode,
-      worktree: worktreeInfo,
+      worktree: undefined,
+      worktreeRequested: worktreeRequested ? true : undefined,
+      worktreeCleanup,
       time: {
         created: Date.now(),
         updated: Date.now(),
@@ -301,7 +309,7 @@ export namespace Session {
         archived: result.time.archived,
       },
       worktree: result.worktree,
-      data: result.mode ? { mode: result.mode } : undefined,
+      data: cacheData(result),
     })
 
     Bus.publish(Event.Created, {
@@ -388,7 +396,7 @@ export namespace Session {
         : undefined,
       share: result.share,
       worktree: result.worktree,
-      data: result.mode ? { mode: result.mode } : undefined,
+      data: cacheData(result),
     })
     SessionMode.set(result.id, result.mode)
 
