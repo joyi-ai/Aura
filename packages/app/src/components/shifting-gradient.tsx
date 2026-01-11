@@ -131,8 +131,8 @@ function blobs(colors: RGB[], crisp = false): Blob[] {
   for (const b of base) {
     const size = Math.round(rand(1020, 1280))
     list.push({
-      x: rand(b.x - 14, b.x + 14),
-      y: rand(b.y - 14, b.y + 14),
+      x: rand(b.x - 6, b.x + 6),
+      y: rand(b.y - 6, b.y + 6),
       size,
       scale: rand(0.9, 1.15),
       blur: Math.round(rand(blurRange.min, blurRange.max)),
