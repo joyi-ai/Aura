@@ -351,6 +351,28 @@ export function SessionTurn(
     return result
   })
 
+  const commentary = createMemo(() => {
+    if (stepsToolParts().length === 0) return
+
+    const responseId = responsePartId()
+    const msgs = assistantMessages()
+    for (let mi = msgs.length - 1; mi >= 0; mi--) {
+      const msgParts = data.store.part[msgs[mi].id] ?? emptyParts
+      for (let pi = msgParts.length - 1; pi >= 0; pi--) {
+        const part = msgParts[pi]
+        if (!part) continue
+        if (part.type !== "text") continue
+        const textPart = part as TextPart
+        if (textPart.synthetic) continue
+        if (responseId && textPart.id === responseId) continue
+
+        const text = (textPart.text ?? "").replace(/\s+/g, " ").trim()
+        if (!text) continue
+        return text
+      }
+    }
+  })
+
   const permissions = createMemo(() => data.store.permission?.[props.sessionID] ?? emptyPermissions)
   const permissionCount = createMemo(() => permissions().length)
   const nextPermission = createMemo(() => permissions()[0])
@@ -619,14 +641,19 @@ export function SessionTurn(
                     </Show>
                     {/* Steps Container - unified for both collapsed and expanded */}
                     <Show when={stepsToolParts().length > 0}>
-                      <StepsContainer
-                        toolParts={stepsToolParts()}
-                        expanded={props.stepsExpanded ?? false}
-                        working={working()}
-                        status={store.status}
-                        duration={store.duration}
-                        onToggle={props.onStepsExpandedToggle ?? (() => {})}
-                      />
+                      <div data-slot="session-turn-steps-section">
+                        <Show when={commentary()}>
+                          {(text) => <div data-slot="session-turn-commentary">{text()}</div>}
+                        </Show>
+                        <StepsContainer
+                          toolParts={stepsToolParts()}
+                          expanded={props.stepsExpanded ?? false}
+                          working={working()}
+                          status={store.status}
+                          duration={store.duration}
+                          onToggle={props.onStepsExpandedToggle ?? (() => {})}
+                        />
+                      </div>
                     </Show>
                     <Show when={inlineToolParts().length > 0}>
                       <div data-slot="session-turn-inline-tools">
