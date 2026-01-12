@@ -48,7 +48,7 @@ import { SessionContextUsage } from "@/components/session-context-usage"
 import { WorktreeStatusIndicator } from "@/components/session-worktree-indicator"
 import { usePlatform } from "@/context/platform"
 import { VoiceButton } from "@/components/voice-button"
-import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
+import { FloatingMegaSelector } from "@/components/floating-mega-selector"
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, "application/pdf"]
@@ -1562,10 +1562,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   return (
     <div class="relative size-full _max-h-[320px] flex flex-col gap-2">
-      {/* Voice recording widget - above prompt bar */}
-      <Show when={platform.platform === "desktop"}>
-        <VoiceRecordingWidget />
-      </Show>
+      <FloatingMegaSelector />
       {/* Worktree status indicator - above prompt bar on the right */}
       <div class="flex justify-end">
         <WorktreeStatusIndicator />

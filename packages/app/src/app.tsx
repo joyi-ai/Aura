@@ -21,6 +21,7 @@ import { NotificationProvider } from "@/context/notification"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { CommandProvider } from "@/context/command"
 import { VoiceProvider } from "@/context/voice"
+import { FloatingSelectorProvider } from "@/context/floating-selector"
 import Layout from "@/pages/layout"
 import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "./pages/error"
@@ -108,7 +109,9 @@ export function AppInterface() {
                     <NotificationProvider>
                       <CommandProvider>
                         <VoiceProvider>
+                          <FloatingSelectorProvider>
                           <Layout>{props.children}</Layout>
+                          </FloatingSelectorProvider>
                         </VoiceProvider>
                       </CommandProvider>
                     </NotificationProvider>

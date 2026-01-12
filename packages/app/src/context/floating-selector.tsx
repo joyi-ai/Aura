@@ -1,0 +1,229 @@
+import { createContext, useContext, ParentProps, onMount, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
+
+interface FloatingSelectorState {
+  isOpen: boolean
+  position: { x: number; y: number }
+}
+
+interface FloatingSelectorContextValue {
+  open: (x: number, y: number) => void
+  close: () => void
+  isOpen: () => boolean
+  position: () => { x: number; y: number }
+  setHoveredAction: (action: (() => void) | null) => void
+  isHoldDragMode: () => boolean
+}
+
+const FloatingSelectorContext = createContext<FloatingSelectorContextValue>()
+
+export function FloatingSelectorProvider(props: ParentProps) {
+  const [state, setState] = createStore<FloatingSelectorState>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+  })
+
+  // Track which mouse buttons are currently pressed
+  let leftPressed = false
+  let rightPressed = false
+  let pendingOpen = false
+
+  // Save the focused element to restore later
+  let savedActiveElement: Element | null = null
+
+  // Track hold-drag mode
+  let isHoldDrag = false
+  let holdDragTimer: ReturnType<typeof setTimeout> | null = null
+  let hoveredAction: (() => void) | null = null
+
+  const isInsideSidebar = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false
+    // Check if click is in the left sidebar area
+    const sidebar = target.closest('[class*="xl:block"][class*="shrink-0"]')
+    const mobileSidebar = target.closest('[class*="fixed"][class*="left-0"][class*="z-50"]')
+    return !!(sidebar || mobileSidebar)
+  }
+
+  const isInsideFloatingSelector = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false
+    return !!target.closest('[data-floating-selector]')
+  }
+
+  const restoreFocus = () => {
+    const elementToFocus = savedActiveElement
+    if (elementToFocus && elementToFocus instanceof HTMLElement) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        elementToFocus.focus()
+      })
+    }
+  }
+
+  const handleMouseDown = (e: MouseEvent) => {
+    // Ignore if inside sidebar
+    if (isInsideSidebar(e.target)) return
+
+    // Ignore if inside floating selector (let it handle its own clicks)
+    if (isInsideFloatingSelector(e.target)) {
+      e.preventDefault() // Prevent focus steal
+      return
+    }
+
+    if (e.button === 0) leftPressed = true
+    if (e.button === 2) rightPressed = true
+
+    // Check if both buttons are now pressed
+    if (leftPressed && rightPressed && !pendingOpen) {
+      pendingOpen = true
+      e.preventDefault()
+
+      if (state.isOpen) {
+        // Close if already open
+        setState("isOpen", false)
+        restoreFocus()
+      } else {
+        // Save current focus before opening
+        savedActiveElement = document.activeElement
+
+        // Open at mouse position
+        setState({
+          isOpen: true,
+          position: { x: e.clientX, y: e.clientY },
+        })
+
+        // Restore focus immediately since we prevented default
+        restoreFocus()
+
+        // Start hold-drag detection timer (150ms threshold)
+        // If buttons stay pressed for this duration, we're in hold-drag mode
+        isHoldDrag = false
+        hoveredAction = null
+        if (holdDragTimer) clearTimeout(holdDragTimer)
+        holdDragTimer = setTimeout(() => {
+          if (leftPressed && rightPressed && state.isOpen) {
+            isHoldDrag = true
+          }
+        }, 150)
+      }
+    }
+  }
+
+  const handleMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) leftPressed = false
+    if (e.button === 2) rightPressed = false
+
+    // Reset pending when both buttons are released
+    if (!leftPressed && !rightPressed) {
+      // Clear hold-drag timer
+      if (holdDragTimer) {
+        clearTimeout(holdDragTimer)
+        holdDragTimer = null
+      }
+
+      // If in hold-drag mode and hovering an action, trigger it and close
+      if (isHoldDrag && hoveredAction && state.isOpen) {
+        hoveredAction()
+        setState("isOpen", false)
+        restoreFocus()
+      }
+
+      // Reset hold-drag state
+      isHoldDrag = false
+      hoveredAction = null
+      pendingOpen = false
+    }
+  }
+
+  const handleContextMenu = (e: MouseEvent) => {
+    // Prevent context menu when both buttons were pressed
+    if (pendingOpen || (leftPressed && rightPressed)) {
+      e.preventDefault()
+    }
+  }
+
+  const handleClickOutside = (e: MouseEvent) => {
+    if (state.isOpen && !isInsideFloatingSelector(e.target)) {
+      // Single click outside closes the selector
+      if (e.button === 0 && !rightPressed) {
+        setState("isOpen", false)
+        restoreFocus()
+      }
+    }
+  }
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (!state.isOpen) return
+
+    // Close on Escape
+    if (e.key === "Escape") {
+      setState("isOpen", false)
+      restoreFocus()
+      return
+    }
+
+    // Close on any printable character key so typing goes to prompt input
+    // This includes letters, numbers, punctuation, space, etc.
+    // Don't close on modifier keys (Shift, Ctrl, Alt, Meta) or function keys
+    const isModifier = e.key === "Shift" || e.key === "Control" || e.key === "Alt" || e.key === "Meta"
+    const isFunctionKey = e.key.startsWith("F") && e.key.length > 1 && e.key.length <= 3
+    const isNavigationKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)
+    const isSpecialKey = ["Tab", "CapsLock", "Insert", "Delete", "Backspace", "Enter"].includes(e.key)
+
+    // Close on printable characters so they go to the input
+    if (!isModifier && !isFunctionKey && !isNavigationKey && !isSpecialKey && e.key.length === 1) {
+      setState("isOpen", false)
+      restoreFocus()
+      // Don't prevent default - let the keystroke go through to the input
+    }
+  }
+
+  onMount(() => {
+    document.addEventListener("mousedown", handleMouseDown, true)
+    document.addEventListener("mouseup", handleMouseUp, true)
+    document.addEventListener("contextmenu", handleContextMenu, true)
+    document.addEventListener("click", handleClickOutside, true)
+    document.addEventListener("keydown", handleKeyDown, true)
+  })
+
+  onCleanup(() => {
+    document.removeEventListener("mousedown", handleMouseDown, true)
+    document.removeEventListener("mouseup", handleMouseUp, true)
+    document.removeEventListener("contextmenu", handleContextMenu, true)
+    document.removeEventListener("click", handleClickOutside, true)
+    document.removeEventListener("keydown", handleKeyDown, true)
+
+    // Clear hold-drag timer
+    if (holdDragTimer) {
+      clearTimeout(holdDragTimer)
+      holdDragTimer = null
+    }
+  })
+
+  const value: FloatingSelectorContextValue = {
+    open: (x, y) => setState({ isOpen: true, position: { x, y } }),
+    close: () => {
+      setState("isOpen", false)
+      restoreFocus()
+    },
+    isOpen: () => state.isOpen,
+    position: () => state.position,
+    setHoveredAction: (action) => {
+      hoveredAction = action
+    },
+    isHoldDragMode: () => isHoldDrag,
+  }
+
+  return (
+    <FloatingSelectorContext.Provider value={value}>
+      {props.children}
+    </FloatingSelectorContext.Provider>
+  )
+}
+
+export function useFloatingSelector() {
+  const context = useContext(FloatingSelectorContext)
+  if (!context) {
+    throw new Error("useFloatingSelector must be used within FloatingSelectorProvider")
+  }
+  return context
+}

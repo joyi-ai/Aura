@@ -80,6 +80,20 @@ export function useRadialDial(options: UseRadialDialOptions): UseRadialDialRetur
   }
 
   function handleMouseMove(e: MouseEvent) {
+    // If left button is pressed while radial dial is active, close it (user is doing left+right click for floating selector)
+    if (isHolding || isOpen()) {
+      if (e.buttons & 1) {
+        cleanup()
+        if (isOpen()) {
+          batch(() => {
+            setIsOpen(false)
+            setHighlightedAction(null)
+          })
+        }
+        return
+      }
+    }
+
     if (!isOpen()) return
 
     const dx = e.clientX - centerX()
