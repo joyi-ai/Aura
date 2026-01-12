@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { useParams, useNavigate } from "@solidjs/router"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
+import { SessionTodoFooter } from "@opencode-ai/ui/session-todo-footer"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
@@ -101,6 +102,12 @@ export function SessionPane(props: SessionPaneProps) {
   const diffs = createMemo(() => {
     const id = sessionId()
     return id ? (sync.data.session_diff[id] ?? []) : []
+  })
+
+  // Todos
+  const todos = createMemo(() => {
+    const id = sessionId()
+    return id ? (sync.data.todo[id] ?? []) : []
   })
 
   // Session messages hook
@@ -540,6 +547,8 @@ export function SessionPane(props: SessionPaneProps) {
               )}
             </For>
           </div>
+          {/* Todo footer - sticky at bottom, hides when all complete */}
+          <SessionTodoFooter todos={todos()} />
         </div>
       </div>
     </Show>

@@ -26,6 +26,7 @@ import os from "os"
 import { Config } from "@/config/config"
 import { McpSync } from "@/mcp/sync"
 import { ClaudePluginTransform } from "@/claude-plugin/transform"
+import { Todo } from "./todo"
 
 export namespace ClaudeAgentProcessor {
   const log = Log.create({ service: "claude-agent-processor" })
@@ -163,31 +164,41 @@ export namespace ClaudeAgentProcessor {
     agentSessionID?: string
     /** Path to the plan file for this session (tracked when agent writes to ~/.claude/plans/) */
     planFilePath?: string
+    /** Streaming text parts by content block index (for real-time token streaming) */
+    streamingParts: Map<number, { partId: string; text: string; type: "text" | "reasoning" }>
   }
 
   /**
-   * Create a multimodal prompt with images for the SDK
-   * Returns an async iterable that yields a single SDKUserMessage
+   * Create a streaming prompt for the SDK (always uses AsyncGenerator)
+   * This enables full streaming input mode with support for:
+   * - Image attachments
+   * - Message queueing
+   * - Interruption via query.interrupt()
+   * - Dynamic permission/model changes
    */
-  async function* createMultimodalPrompt(
+  async function* createStreamingPrompt(
     text: string,
-    images: ImageInput[],
+    images: ImageInput[] | undefined,
     sessionID: string,
   ): AsyncIterable<SDKUserMessage> {
+    // Build content array
     const content: Array<
-      { type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+      | { type: "text"; text: string }
+      | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
     > = []
 
-    // Add image blocks first
-    for (const image of images) {
-      content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: image.mediaType,
-          data: image.data,
-        },
-      })
+    // Add image blocks first (if any)
+    if (images && images.length > 0) {
+      for (const image of images) {
+        content.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: image.mediaType,
+            data: image.data,
+          },
+        })
+      }
     }
 
     // Add text block
@@ -196,7 +207,7 @@ export namespace ClaudeAgentProcessor {
       text,
     })
 
-    // SDKUserMessage format requires wrapping the API message
+    // Yield the user message in SDK format
     yield {
       type: "user",
       session_id: sessionID,
@@ -388,35 +399,44 @@ export namespace ClaudeAgentProcessor {
         break
 
       case "assistant":
+        // Process assistant message content blocks.
+        // Text/thinking may arrive here as fallback if streaming is unavailable,
+        // or via stream_event for real-time token streaming.
         if (!msg.message?.content) break
         for (const block of msg.message.content) {
           if ("text" in block && block.text) {
-            // Text block
-            const textPart: MessageV2.TextPart = {
-              id: Identifier.ascending("part"),
-              sessionID: ctx.sessionID,
-              messageID: ctx.messageID,
-              type: "text",
-              text: block.text,
-              time: {
-                start: Date.now(),
-              },
+            // Text block - fallback for when streaming is unavailable
+            // Check if we already have this content from streaming
+            const existingStreamedText = Array.from(ctx.streamingParts.values()).find(
+              (p) => p.type === "text" && p.text === block.text,
+            )
+            if (!existingStreamedText) {
+              const textPart: MessageV2.TextPart = {
+                id: Identifier.ascending("part"),
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "text",
+                text: block.text,
+                time: { start: Date.now() },
+              }
+              await Session.updatePart(textPart)
             }
-            await Session.updatePart(textPart)
           } else if ("thinking" in block && block.thinking) {
-            // Reasoning/thinking block
-            const reasoningPart: MessageV2.ReasoningPart = {
-              id: Identifier.ascending("part"),
-              sessionID: ctx.sessionID,
-              messageID: ctx.messageID,
-              type: "reasoning",
-              text: block.thinking,
-              time: {
-                start: Date.now(),
-                end: Date.now(),
-              },
+            // Reasoning/thinking block - fallback for when streaming is unavailable
+            const existingStreamedReasoning = Array.from(ctx.streamingParts.values()).find(
+              (p) => p.type === "reasoning" && p.text === block.thinking,
+            )
+            if (!existingStreamedReasoning) {
+              const reasoningPart: MessageV2.ReasoningPart = {
+                id: Identifier.ascending("part"),
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "reasoning",
+                text: block.thinking,
+                time: { start: Date.now(), end: Date.now() },
+              }
+              await Session.updatePart(reasoningPart)
             }
-            await Session.updatePart(reasoningPart)
           } else if ("type" in block && block.type === "tool_use") {
             // Tool use start - create a running tool part
             const toolBlock = block as { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
@@ -448,6 +468,17 @@ export namespace ClaudeAgentProcessor {
             }
             ctx.toolParts.set(toolBlock.id, toolPart)
             await Session.updatePart(toolPart)
+
+            // Handle TodoWrite - update the todo store so the footer can display it
+            if (toolName === "todowrite" && Array.isArray(toolBlock.input.todos)) {
+              const todos = toolBlock.input.todos.map((t: { content?: string; status?: string }, i: number) => ({
+                id: `todo-${i}`,
+                content: t.content ?? "",
+                status: t.status ?? "pending",
+                priority: "medium",
+              }))
+              await Todo.update({ sessionID: ctx.sessionID, todos })
+            }
           }
         }
         break
@@ -524,7 +555,148 @@ export namespace ClaudeAgentProcessor {
           turns: msg.num_turns,
         })
         break
+
+      case "stream_event": {
+        // Real-time streaming events (SDKPartialAssistantMessage)
+        // Handle token-level updates for immediate display
+        const event = msg.event
+        if (!event) break
+
+        if (event.type === "content_block_start") {
+          // Start a new content block - create streaming part
+          const index = event.index
+          const block = event.content_block
+
+          if (block.type === "text") {
+            const partId = Identifier.ascending("part")
+            ctx.streamingParts.set(index, { partId, text: "", type: "text" })
+            // Create initial empty text part
+            const textPart: MessageV2.TextPart = {
+              id: partId,
+              sessionID: ctx.sessionID,
+              messageID: ctx.messageID,
+              type: "text",
+              text: "",
+              time: { start: Date.now() },
+            }
+            await Session.updatePart(textPart)
+          } else if (block.type === "thinking") {
+            const partId = Identifier.ascending("part")
+            ctx.streamingParts.set(index, { partId, text: "", type: "reasoning" })
+            // Create initial empty reasoning part
+            const reasoningPart: MessageV2.ReasoningPart = {
+              id: partId,
+              sessionID: ctx.sessionID,
+              messageID: ctx.messageID,
+              type: "reasoning",
+              text: "",
+              time: { start: Date.now() },
+            }
+            await Session.updatePart(reasoningPart)
+          }
+        } else if (event.type === "content_block_delta") {
+          // Append delta to existing streaming part
+          const index = event.index
+          const delta = event.delta
+          const streaming = ctx.streamingParts.get(index)
+
+          if (streaming) {
+            if (delta.type === "text_delta" && streaming.type === "text") {
+              streaming.text += delta.text
+              const textPart: MessageV2.TextPart = {
+                id: streaming.partId,
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "text",
+                text: streaming.text,
+                time: { start: Date.now() },
+              }
+              await Session.updatePart(textPart)
+            } else if (delta.type === "thinking_delta" && streaming.type === "reasoning") {
+              streaming.text += delta.thinking
+              const reasoningPart: MessageV2.ReasoningPart = {
+                id: streaming.partId,
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "reasoning",
+                text: streaming.text,
+                time: { start: Date.now() },
+              }
+              await Session.updatePart(reasoningPart)
+            }
+          }
+        } else if (event.type === "content_block_stop") {
+          // Content block finished - finalize the part
+          const index = event.index
+          const streaming = ctx.streamingParts.get(index)
+
+          if (streaming) {
+            if (streaming.type === "text") {
+              const textPart: MessageV2.TextPart = {
+                id: streaming.partId,
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "text",
+                text: streaming.text,
+                time: { start: Date.now() },
+              }
+              await Session.updatePart(textPart)
+            } else if (streaming.type === "reasoning") {
+              const reasoningPart: MessageV2.ReasoningPart = {
+                id: streaming.partId,
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                type: "reasoning",
+                text: streaming.text,
+                time: { start: Date.now(), end: Date.now() },
+              }
+              await Session.updatePart(reasoningPart)
+            }
+            // Keep the part in the map so we can skip it in assistant message
+          }
+        } else if (event.type === "message_stop") {
+          // Message complete - clear streaming parts for next message
+          ctx.streamingParts.clear()
+        }
+        break
+      }
     }
+  }
+
+  /**
+   * SDK agent definition type
+   */
+  type SdkAgentDefinition = {
+    description: string
+    tools?: string[]
+    prompt: string
+    model?: "sonnet" | "opus" | "haiku" | "inherit"
+  }
+
+  /**
+   * Build SDK agent definitions from OpenCode agents
+   * Maps OpenCode subagents to the SDK's agents option format
+   */
+  async function buildSdkAgents(): Promise<Record<string, SdkAgentDefinition>> {
+    const { Agent } = await import("@/agent/agent")
+    const agents = await Agent.list()
+    const sdkAgents: Record<string, SdkAgentDefinition> = {}
+
+    for (const agent of agents) {
+      // Skip hidden agents (compaction, title, summary)
+      if (agent.hidden) continue
+      // Skip primary agents (they run as the main agent, not subagents)
+      if (agent.mode === "primary") continue
+
+      sdkAgents[agent.name] = {
+        description: agent.description || `${agent.name} agent`,
+        prompt: agent.prompt || "",
+        // Map model if specified
+        model: agent.model?.modelID as "sonnet" | "opus" | "haiku" | undefined,
+      }
+    }
+
+    return sdkAgents
   }
 
   /**
@@ -617,6 +789,7 @@ export namespace ClaudeAgentProcessor {
       sessionID: input.sessionID,
       messageID: input.assistantMessage.id,
       toolParts: new Map(),
+      streamingParts: new Map(),
     }
 
     // Check if we have an existing agent session to resume
@@ -655,13 +828,10 @@ export namespace ClaudeAgentProcessor {
         abortController.abort()
       })
 
-      // Create prompt - use multimodal format if images are present
-      // For the SDK session_id, use the existing agent session or generate a placeholder
+      // Create streaming prompt (always uses AsyncGenerator for full streaming input mode)
+      // This enables: image attachments, message queueing, interruption, dynamic permission/model changes
       const sdkSessionID = existingAgentSessionID ?? crypto.randomUUID()
-      const prompt =
-        input.images && input.images.length > 0
-          ? createMultimodalPrompt(input.prompt, input.images, sdkSessionID)
-          : input.prompt
+      const prompt = createStreamingPrompt(input.prompt, input.images, sdkSessionID)
 
       // Build env vars - for OpenRouter, add model override
       const envVars: Record<string, string | undefined> = {
@@ -696,6 +866,9 @@ export namespace ClaudeAgentProcessor {
             "ExitPlanMode",
           ]
 
+      // Build SDK agent definitions from OpenCode agents
+      const sdkAgents = await buildSdkAgents()
+
       const generator = query({
         prompt,
         options: {
@@ -714,6 +887,27 @@ export namespace ClaudeAgentProcessor {
           env: envVars,
           mcpServers: hasMcp ? mcpServers : undefined,
           allowedTools,
+
+          // === SDK FEATURES ===
+
+          // Real-time streaming events (enables SDKPartialAssistantMessage)
+          includePartialMessages: true,
+
+          // System prompt configuration
+          // Option A: Use Claude Code's built-in system prompt with optional additions
+          systemPrompt: {
+            type: "preset",
+            preset: "claude_code",
+            append: "", // Add custom instructions here if needed
+          },
+          // Option B: Fully custom system prompt (uncomment to use)
+          // systemPrompt: `Your custom system prompt here...`,
+
+          // Load all settings: user (~/.claude/settings.json), project (.claude/settings.json + CLAUDE.md), local (.claude/settings.local.json)
+          settingSources: ["user", "project", "local"],
+
+          // Subagent definitions from OpenCode agent system
+          agents: sdkAgents,
         },
       })
 
