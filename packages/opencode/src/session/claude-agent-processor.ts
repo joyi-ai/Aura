@@ -211,7 +211,11 @@ export namespace ClaudeAgentProcessor {
   /**
    * Map OpenCode permission rules to Claude Agent SDK permission mode
    */
-  function mapPermissionMode(agent: Agent.Info): PermissionMode {
+  export function mapPermissionMode(agent: Agent.Info): PermissionMode {
+    // If the user selected OpenCode's `plan` agent while running through Claude Code,
+    // use Claude Agent SDK's planning-only mode (no execution).
+    if (agent.name === "plan") return "plan"
+
     const permission = agent.permission
     if (!permission || permission.length === 0) return "default"
 
