@@ -1326,28 +1326,6 @@ export default function Layout(props: ParentProps) {
               </Tooltip>
             </Match>
           </Switch>
-          <Tooltip
-            placement="right"
-            value={
-              <div class="flex items-center gap-2">
-                <span>Open project</span>
-                <Show when={!sidebarProps.mobile}>
-                  <span class="text-icon-base text-12-medium">{command.keybind("project.open")}</span>
-                </Show>
-              </div>
-            }
-            inactive={expanded()}
-          >
-            <Button
-              class="flex w-full text-left justify-start text-text-base stroke-[1.5px] rounded-lg px-2"
-              variant="ghost"
-              size="large"
-              icon="folder-add-left"
-              onClick={chooseProject}
-            >
-              <Show when={expanded()}>Open project</Show>
-            </Button>
-          </Tooltip>
           <Tooltip placement="right" value="MCP servers" inactive={expanded()}>
             <Button
               class="flex w-full text-left justify-start text-text-base stroke-[1.5px] rounded-lg px-2"
@@ -1371,7 +1349,7 @@ export default function Layout(props: ParentProps) {
               <Show when={expanded()}>Marketplace</Show>
             </Button>
           </Tooltip>
-          <Tooltip placement="right" value="Share feedback" inactive={expanded()}>
+          {/* <Tooltip placement="right" value="Share feedback" inactive={expanded()}>
             <Button
               as={"a"}
               href="https://opencode.ai/desktop-feedback"
@@ -1383,7 +1361,7 @@ export default function Layout(props: ParentProps) {
             >
               <Show when={expanded()}>Share feedback</Show>
             </Button>
-          </Tooltip>
+          </Tooltip> */}
         </div>
       </>
     )
