@@ -14,14 +14,9 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
 
   // Count by status
   const counts = createMemo(() => {
-    const pending = props.todos.filter((t) => t.status === "pending").length
-    const inProgress = props.todos.filter((t) => t.status === "in_progress").length
     const completed = props.todos.filter((t) => t.status === "completed").length
-    return { pending, inProgress, completed, total: props.todos.length }
+    return { completed, total: props.todos.length }
   })
-
-  // Current active task (in_progress)
-  const currentTask = createMemo(() => props.todos.find((t) => t.status === "in_progress"))
 
   // Hide footer when no active todos
   const shouldShow = createMemo(() => activeTodos().length > 0)
@@ -42,16 +37,6 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
               {counts().completed}/{counts().total}
             </span>
           </div>
-
-          {/* Current task */}
-          <Show when={currentTask()}>
-            {(task) => (
-              <div data-slot="session-todo-footer-current">
-                <Spinner data-slot="session-todo-footer-spinner" />
-                <span data-slot="session-todo-footer-current-text">{task().content}</span>
-              </div>
-            )}
-          </Show>
 
           {/* Todo list */}
           <div data-slot="session-todo-footer-list">

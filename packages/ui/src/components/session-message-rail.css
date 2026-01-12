@@ -6,14 +6,17 @@
 [data-slot="session-message-rail-full"] {
   position: absolute;
   left: 1.5rem;
-  margin-top: 0.625rem;
-  top: 0;
-  bottom: 8rem;
+  top: auto;
+  bottom: 1.5rem;
+  max-height: calc(100% - 8rem);
   overflow-y: auto;
+  z-index: 10;
 }
 
 [data-slot="session-message-rail-compact"] {
   display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 
 [data-slot="session-message-rail-full"] {
@@ -34,11 +37,6 @@
 }
 
 [data-component="session-message-rail"][data-wide] [data-slot="session-message-rail-full"] {
-  margin-top: 0.125rem;
   left: calc(((100% - min(100%, 50rem)) / 2) - 1.5rem);
   transform: translateX(-100%);
-}
-
-[data-component="session-message-rail"]:not([data-wide]) [data-slot="session-message-rail-full"] {
-  margin-top: 0.625rem;
 }

@@ -428,6 +428,9 @@
   [data-slot="session-turn-reasoning"] {
     width: 100%;
     min-width: 0;
+    height: 120px;
+    min-height: 120px;
+    max-height: 120px;
     font-size: var(--font-size-small);
     line-height: var(--line-height-large);
     color: var(--text-weaker);
@@ -435,7 +438,26 @@
     font-style: italic;
     white-space: pre-wrap;
     word-break: break-word;
-    overflow: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    animation: reasoning-expand 0.4s ease-out;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+}
+
+@keyframes reasoning-expand {
+  from {
+    height: 0;
+    min-height: 0;
+    opacity: 0;
+  }
+  to {
+    height: 120px;
+    min-height: 120px;
+    opacity: 0.9;
   }
 }
 
@@ -444,8 +466,8 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--surface-inset-base);
-  border: 1px solid var(--border-weaker-base);
+  background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
+  border: 1px solid var(--border-strong-base);
   border-radius: var(--radius-md);
   overflow: hidden;
 
@@ -496,13 +518,30 @@
   }
 
   [data-slot="steps-footer"] {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 4px;
     padding: 6px 12px;
-    border-top: 1px solid var(--border-weaker-base);
     font-family: var(--font-family-sans);
+
+    /* Tapered top border */
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 24px;
+      right: 24px;
+      height: 1px;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--border-base) 15%,
+        var(--border-base) 85%,
+        transparent 100%
+      );
+    }
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);

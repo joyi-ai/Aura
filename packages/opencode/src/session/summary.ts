@@ -34,22 +34,19 @@ export namespace SessionSummary {
     modelID: string
     agent?: Agent.Info
   }) {
+    // For codex/claude-agent: just use opencode's gpt-5-nano
+    if (input.providerID === "codex" || input.providerID === "claude-agent") {
+      return resolveOpencodeSmallModel()
+    }
     if (input.agent?.model) {
       const agentModel = await Provider.getModel(input.agent.model.providerID, input.agent.model.modelID)
-      if (agentModel.providerID !== "codex") return agentModel
-    }
-    if (input.providerID !== "codex") {
-      const small = await Provider.getSmallModel(input.providerID)
-      if (small && small.providerID !== "codex") return small
-      const fallback = await resolveOpencodeSmallModel()
-      if (fallback) return fallback
-      return Provider.getModel(input.providerID, input.modelID)
+      if (agentModel.providerID !== "codex" && agentModel.providerID !== "claude-agent") return agentModel
     }
     const small = await Provider.getSmallModel(input.providerID)
-    if (small && small.providerID !== "codex") return small
+    if (small && small.providerID !== "codex" && small.providerID !== "claude-agent") return small
     const fallback = await resolveOpencodeSmallModel()
     if (fallback) return fallback
-    return undefined
+    return Provider.getModel(input.providerID, input.modelID)
   }
 
   export const summarize = fn(

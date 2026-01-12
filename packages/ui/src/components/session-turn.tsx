@@ -107,11 +107,11 @@ function StepsContainer(props: {
     const parts = props.toolParts
     if (parts.length === 0) return []
     if (props.expanded) return parts
-    if (parts.length === 1) return [parts[0]]
-    return [parts[parts.length - 2], parts[parts.length - 1]]
+    if (parts.length <= 3) return parts
+    return [parts[parts.length - 3], parts[parts.length - 2], parts[parts.length - 1]]
   })
 
-  const hiddenCount = createMemo(() => (props.expanded ? 0 : Math.max(0, props.toolParts.length - 2)))
+  const hiddenCount = createMemo(() => (props.expanded ? 0 : Math.max(0, props.toolParts.length - 3)))
 
   return (
     <div data-component="steps-container" data-expanded={props.expanded}>

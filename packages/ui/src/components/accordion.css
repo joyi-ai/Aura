@@ -32,8 +32,8 @@
         cursor: default;
         user-select: none;
 
-        background-color: var(--surface-base);
-        border: 1px solid var(--border-weak-base);
+        background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
+        border: 1px solid var(--border-strong-base);
         overflow: clip;
         color: var(--text-strong);
         transition: background-color 0.15s ease;
@@ -47,7 +47,7 @@
         letter-spacing: var(--letter-spacing-normal);
 
         &:hover {
-          background-color: var(--surface-base);
+          background-color: color-mix(in srgb, var(--surface-inset-base) 25%, transparent);
         }
         &:focus-visible {
           outline: none;
@@ -68,7 +68,7 @@
       }
 
       [data-slot="accordion-content"] {
-        border: 1px solid var(--border-weak-base);
+        border: 1px solid var(--border-strong-base);
         border-top: none;
         border-bottom-left-radius: var(--radius-md);
         border-bottom-right-radius: var(--radius-md);

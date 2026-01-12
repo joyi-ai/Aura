@@ -129,7 +129,8 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow: hidden;
-    background: var(--surface-base);
+    background: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
+    border: 1px solid var(--border-strong-base);
     padding: 8px 12px;
     border-radius: 4px;
   }

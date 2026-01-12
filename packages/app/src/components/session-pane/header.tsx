@@ -110,7 +110,7 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
   // Single mode header (full featured)
   if (props.mode === "single") {
     return (
-      <header class="h-12 shrink-0 bg-background-base border-b border-border-weak-base flex" data-tauri-drag-region>
+      <header class="h-12 shrink-0 bg-background-stronger border-b border-border-weak-base flex" data-tauri-drag-region>
         <button
           type="button"
           class="xl:hidden w-12 shrink-0 flex items-center justify-center border-r border-border-weak-base hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active transition-colors"
@@ -290,7 +290,7 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
   // Multi mode header (compact overlay)
   return (
     <header
-      class="shrink-0 border-b flex flex-col"
+      class="shrink-0 bg-background-stronger border-b flex flex-col"
       classList={{
         "border-border-accent-base": focused(),
         "border-border-weak-base": !focused(),
