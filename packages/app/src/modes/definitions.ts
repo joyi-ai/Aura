@@ -5,7 +5,7 @@ export const DEFAULT_MODE_ID: ModeId = "claude-code"
 export const BUILTIN_MODES: ModeDefinition[] = [
   {
     id: "claude-code",
-    name: "Claude Agent",
+    name: "Claude Code",
     description: "Claude Code workflows with the claude-agent provider.",
     icon: "speech-bubble",
     color: "#E07A5F",

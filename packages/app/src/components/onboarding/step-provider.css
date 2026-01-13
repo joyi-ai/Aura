@@ -1,0 +1,10 @@
+[data-component="dialog"] .onboarding-provider-dialog {
+  [data-slot="dialog-footer"] {
+    display: flex;
+    padding: 12px 16px;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-weak-base);
+  }
+}

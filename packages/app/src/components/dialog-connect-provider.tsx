@@ -30,7 +30,7 @@ type RoutingSettings = {
   only?: string[]
 }
 
-export function DialogConnectProvider(props: { provider: string }) {
+export function DialogConnectProvider(props: { provider: string; onBack?: () => void }) {
   const dialog = useDialog()
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
@@ -169,17 +169,19 @@ export function DialogConnectProvider(props: { provider: string }) {
   }
 
   function goBack() {
-    if (methods().length === 1) {
-      dialog.show(() => <DialogSelectProvider />)
-      return
-    }
+    // If we have nested state, go back one level
     if (store.authorization) {
       setStore("authorization", undefined)
       setStore("methodIndex", undefined)
       return
     }
-    if (store.methodIndex) {
+    if (store.methodIndex !== undefined && methods().length > 1) {
       setStore("methodIndex", undefined)
+      return
+    }
+    // Otherwise, use custom onBack or default to DialogSelectProvider
+    if (props.onBack) {
+      props.onBack()
       return
     }
     dialog.show(() => <DialogSelectProvider />)

@@ -27,6 +27,7 @@ import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "./pages/error"
 import { iife } from "@opencode-ai/util/iife"
 import { Suspense } from "solid-js"
+import { OnboardingProvider, Onboarding } from "@/components/onboarding"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -110,7 +111,10 @@ export function AppInterface() {
                       <CommandProvider>
                         <VoiceProvider>
                           <FloatingSelectorProvider>
-                          <Layout>{props.children}</Layout>
+                            <OnboardingProvider>
+                              <Layout>{props.children}</Layout>
+                              <Onboarding />
+                            </OnboardingProvider>
                           </FloatingSelectorProvider>
                         </VoiceProvider>
                       </CommandProvider>
