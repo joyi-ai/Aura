@@ -1,6 +1,6 @@
 import { Show, createMemo, onMount, createEffect, on, createSignal, type JSX } from "solid-js"
 import { useSearchParams } from "@solidjs/router"
-import { MultiPaneProvider, useMultiPane } from "@/context/multi-pane"
+import { useMultiPane, MultiPaneProvider } from "@/context/multi-pane"
 import { PaneGrid } from "@/components/pane-grid"
 import { SessionPane } from "@/components/session-pane"
 import { ReviewPanel } from "@/components/session-pane/review-panel"

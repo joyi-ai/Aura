@@ -68,6 +68,9 @@ export function SessionPane(props: SessionPaneProps) {
     turnLimit: 30,
     didRestoreScroll: {} as Record<string, boolean>,
     loadingMore: false,
+    pendingTopScrollId: undefined as string | undefined,
+    pendingTopScrollCanceled: false,
+    pendingTopScrollFrame: undefined as number | undefined,
   })
 
   // Session ID (from props in multi mode, from params in single mode)
@@ -195,19 +198,6 @@ export function SessionPane(props: SessionPaneProps) {
     ),
   )
 
-  // Reset message ID when new message arrives
-  createEffect(
-    on(
-      () => sessionMessages.visibleUserMessages().at(-1)?.id,
-      (lastId, prevLastId) => {
-        if (lastId && prevLastId && lastId > prevLastId) {
-          sessionMessages.resetToLast()
-        }
-      },
-      { defer: true },
-    ),
-  )
-
   // Reset user interaction on session change
   createEffect(
     on(
@@ -307,14 +297,35 @@ export function SessionPane(props: SessionPaneProps) {
     },
   })
 
-  let scrollFrame: number | undefined
-  let scrollPending: { x: number; y: number } | undefined
+  const handleUserScrollIntent = () => {
+    if (!store.pendingTopScrollId) return
+    setStore("pendingTopScrollCanceled", true)
+  }
+
+  let scrollIntentCleanup: (() => void) | undefined
 
   let desktopScrollEl: HTMLDivElement | undefined
   const setDesktopScrollRef = (el: HTMLDivElement | undefined) => {
+    if (scrollIntentCleanup) {
+      scrollIntentCleanup()
+      scrollIntentCleanup = undefined
+    }
+
     desktopScrollEl = el
     desktopAutoScroll.scrollRef(el)
     requestAnimationFrame(() => restoreDesktopScroll())
+
+    if (!el) return
+
+    el.addEventListener("wheel", handleUserScrollIntent, { passive: true })
+    el.addEventListener("pointerdown", handleUserScrollIntent)
+    el.addEventListener("touchstart", handleUserScrollIntent, { passive: true })
+
+    scrollIntentCleanup = () => {
+      el.removeEventListener("wheel", handleUserScrollIntent)
+      el.removeEventListener("pointerdown", handleUserScrollIntent)
+      el.removeEventListener("touchstart", handleUserScrollIntent)
+    }
   }
 
   const restoreDesktopScroll = (retries = 0) => {
@@ -346,7 +357,19 @@ export function SessionPane(props: SessionPaneProps) {
     ),
   )
 
-  const scrollToMessage = (id: string, behavior: ScrollBehavior = "smooth") => {
+  onCleanup(() => {
+    if (scrollIntentCleanup) scrollIntentCleanup()
+
+    const pending = store.pendingTopScrollFrame
+    if (!pending) return
+    cancelAnimationFrame(pending)
+  })
+
+  const scrollToMessage = (
+    id: string,
+    behavior: ScrollBehavior = "smooth",
+    block: ScrollLogicalPosition = "center",
+  ) => {
     const root = desktopScrollEl
     if (!root) return
 
@@ -357,8 +380,59 @@ export function SessionPane(props: SessionPaneProps) {
 
     const el = root.querySelector(`[data-message="${escaped}"]`) as HTMLElement | null
     if (!el) return
-    el.scrollIntoView({ block: "center", behavior })
+    el.scrollIntoView({ block, behavior })
   }
+
+  const scheduleScrollToMessageTop = (id: string) => {
+    if (!desktopScrollEl) return
+
+    const pending = store.pendingTopScrollFrame
+    if (pending) cancelAnimationFrame(pending)
+
+    setStore({
+      pendingTopScrollId: id,
+      pendingTopScrollCanceled: false,
+      pendingTopScrollFrame: undefined,
+    })
+
+    const frame = requestAnimationFrame(() => {
+      if (store.pendingTopScrollId !== id) return
+
+      if (store.pendingTopScrollCanceled) {
+        setStore({
+          pendingTopScrollId: undefined,
+          pendingTopScrollCanceled: false,
+          pendingTopScrollFrame: undefined,
+        })
+        return
+      }
+
+      scrollToMessage(id, "smooth", "start")
+      desktopAutoScroll.handleInteraction()
+      setStore({
+        pendingTopScrollId: undefined,
+        pendingTopScrollCanceled: false,
+        pendingTopScrollFrame: undefined,
+      })
+    })
+
+    setStore("pendingTopScrollFrame", frame)
+  }
+
+  // Reset message ID when new message arrives
+  createEffect(
+    on(
+      () => sessionMessages.visibleUserMessages().at(-1)?.id,
+      (lastId, prevLastId) => {
+        if (!lastId) return
+        if (!prevLastId) return
+        if (lastId <= prevLastId) return
+        sessionMessages.resetToLast()
+        scheduleScrollToMessageTop(lastId)
+      },
+      { defer: true },
+    ),
+  )
 
   const handleMessageSelect = (message: UserMessage) => {
     const visible = sessionMessages.visibleUserMessages()
@@ -404,20 +478,6 @@ export function SessionPane(props: SessionPaneProps) {
     const id = sessionId()
     if (!root) return
     if (!id) return
-
-    scrollPending = {
-      x: root.scrollLeft,
-      y: root.scrollTop,
-    }
-    if (scrollFrame === undefined) {
-      scrollFrame = requestAnimationFrame(() => {
-        scrollFrame = undefined
-        const next = scrollPending
-        scrollPending = undefined
-        if (!next) return
-        view().setScroll("session", next)
-      })
-    }
 
     if (store.loadingMore) return
     if (root.scrollTop > 200) return

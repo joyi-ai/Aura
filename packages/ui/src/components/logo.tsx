@@ -30,7 +30,7 @@ export const Logo = (props: { class?: string }) => {
         letter-spacing="0.25"
       >
         <tspan fill="var(--icon-base)">open</tspan>
-        <tspan fill="var(--icon-strong-base)">agent</tspan>
+        <tspan fill="var(--icon-strong-base)">poo</tspan>
       </text>
     </svg>
   )
