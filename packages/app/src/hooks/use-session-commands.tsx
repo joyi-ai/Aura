@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useNavigate, useParams } from "@solidjs/router"
+import { useNavigate } from "@solidjs/router"
 import { useCommand } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLocal } from "@/context/local"
@@ -28,7 +28,6 @@ export interface UseSessionCommandsOptions {
 }
 
 export function useSessionCommands(options: UseSessionCommandsOptions): void {
-  const params = useParams()
   const navigate = useNavigate()
   const command = useCommand()
   const dialog = useDialog()
@@ -58,7 +57,7 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       keybind: "mod+shift+s",
       slash: "new",
       disabled: !enabled(),
-      onSelect: () => navigate(`/${params.dir}/session`),
+      onSelect: () => navigate(`/multi?dir=${encodeURIComponent(sdk.directory)}`),
     },
     {
       id: "file.open",

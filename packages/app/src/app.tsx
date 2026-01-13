@@ -1,6 +1,6 @@
 import "@/index.css"
 import { ErrorBoundary, Show, lazy, type ParentProps } from "solid-js"
-import { Router, Route, Navigate } from "@solidjs/router"
+import { Router, Route, Navigate, useParams } from "@solidjs/router"
 import { MetaProvider } from "@solidjs/meta"
 import { Font } from "@opencode-ai/ui/font"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
@@ -14,9 +14,6 @@ import { PermissionProvider } from "@/context/permission"
 import { LayoutProvider } from "@/context/layout"
 import { GlobalSDKProvider } from "@/context/global-sdk"
 import { ServerProvider, useServer } from "@/context/server"
-import { TerminalProvider } from "@/context/terminal"
-import { PromptProvider } from "@/context/prompt"
-import { FileProvider } from "@/context/file"
 import { NotificationProvider } from "@/context/notification"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { CommandProvider } from "@/context/command"
@@ -28,9 +25,9 @@ import { ErrorPage } from "./pages/error"
 import { iife } from "@opencode-ai/util/iife"
 import { Suspense } from "solid-js"
 import { OnboardingProvider, Onboarding } from "@/components/onboarding"
+import { base64Decode } from "@opencode-ai/util/encode"
 
 const Home = lazy(() => import("@/pages/home"))
-const Session = lazy(() => import("@/pages/session"))
 const Marketplace = lazy(() => import("@/pages/marketplace"))
 const MultiPanePage = lazy(() => import("@/pages/multi-pane"))
 const Loading = () => <div class="size-full flex items-center justify-center text-text-weak">Loading...</div>
@@ -98,6 +95,13 @@ function ServerKey(props: ParentProps) {
 }
 
 export function AppInterface() {
+  const SessionRedirect = () => {
+    const params = useParams()
+    const directory = params.dir ? base64Decode(params.dir) : ""
+    const query = directory ? `?dir=${encodeURIComponent(directory)}${params.id ? `&session=${params.id}` : ""}` : ""
+    return <Navigate href={`/multi${query}`} />
+  }
+
   return (
     <ServerProvider defaultUrl={defaultServerUrl}>
       <ServerKey>
@@ -151,19 +155,7 @@ export function AppInterface() {
                 <Route path="/" component={() => <Navigate href="session" />} />
                 <Route
                   path="/session/:id?"
-                  component={(p) => (
-                    <Show when={p.params.id ?? "new"} keyed>
-                      <TerminalProvider>
-                        <FileProvider>
-                          <PromptProvider>
-                            <Suspense fallback={<Loading />}>
-                              <Session />
-                            </Suspense>
-                          </PromptProvider>
-                        </FileProvider>
-                      </TerminalProvider>
-                    </Show>
-                  )}
+                  component={() => <SessionRedirect />}
                 />
               </Route>
             </Router>

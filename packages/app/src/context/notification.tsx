@@ -5,7 +5,6 @@ import { useGlobalSDK } from "./global-sdk"
 import { useGlobalSync } from "./global-sync"
 import { usePlatform } from "@/context/platform"
 import { Binary } from "@opencode-ai/util/binary"
-import { base64Encode } from "@opencode-ai/util/encode"
 import { EventSessionError } from "@opencode-ai/sdk/v2"
 import { makeAudioPlayer } from "@solid-primitives/audio"
 import idleSound from "@opencode-ai/ui/audio/staplebops-01.aac"
@@ -101,7 +100,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
             type: "turn-complete",
             session: sessionID,
           })
-          const href = `/${base64Encode(directory)}/session/${sessionID}`
+          const href = `/multi?dir=${encodeURIComponent(directory)}&session=${sessionID}`
           void platform.notify("Response ready", session?.title ?? sessionID, href)
           break
         }
@@ -122,7 +121,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
             error,
           })
           const description = session?.title ?? (typeof error === "string" ? error : "An error occurred")
-          const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
+          const href = sessionID
+            ? `/multi?dir=${encodeURIComponent(directory)}&session=${sessionID}`
+            : `/multi?dir=${encodeURIComponent(directory)}`
           void platform.notify("Session error", description, href)
           break
         }
