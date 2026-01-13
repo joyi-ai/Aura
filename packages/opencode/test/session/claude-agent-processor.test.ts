@@ -33,4 +33,3 @@ describe("ClaudeAgentProcessor.mapPermissionMode", () => {
     expect(ClaudeAgentProcessor.mapPermissionMode(agent)).toBe("acceptEdits")
   })
 })
-

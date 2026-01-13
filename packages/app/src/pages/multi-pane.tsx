@@ -29,8 +29,11 @@ import { getPaneProjectLabel, getPaneState, getPaneTitle } from "@/utils/pane"
 function PaneSyncedProviders(props: { paneId: string; directory: string; children: any }) {
   const sync = useSync()
   const sdk = useSDK()
-  const respondToPermission = (input: { sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) =>
-    sdk.client.permission.respond(input)
+  const respondToPermission = (input: {
+    sessionID: string
+    permissionID: string
+    response: "once" | "always" | "reject"
+  }) => sdk.client.permission.respond(input)
 
   const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
     const response = await fetch(`${sdk.url}/askuser/${input.requestID}/reply`, {
@@ -79,8 +82,11 @@ function PaneSyncedProviders(props: { paneId: string; directory: string; childre
 function GlobalPromptSynced(props: { paneId: string; directory: string; sessionId?: string }) {
   const sync = useSync()
   const sdk = useSDK()
-  const respondToPermission = (input: { sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) =>
-    sdk.client.permission.respond(input)
+  const respondToPermission = (input: {
+    sessionID: string
+    permissionID: string
+    response: "once" | "always" | "reject"
+  }) => sdk.client.permission.respond(input)
 
   const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
     const response = await fetch(`${sdk.url}/askuser/${input.requestID}/reply`, {
@@ -139,9 +145,7 @@ function GlobalReviewSynced(props: { paneId: string; directory: string; sessionI
   const contextOpen = createMemo(() => tabs().active() === "context" || tabs().all().includes("context"))
   const diffs = createMemo(() => (props.sessionId ? (sync.data.session_diff[props.sessionId] ?? []) : []))
   const sessionInfo = createMemo(() => (props.sessionId ? sync.session.get(props.sessionId) : undefined))
-  const showReview = createMemo(
-    () => diffs().length > 0 || tabs().all().length > 0 || contextOpen(),
-  )
+  const showReview = createMemo(() => diffs().length > 0 || tabs().all().length > 0 || contextOpen())
 
   createEffect(
     on(

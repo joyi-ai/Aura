@@ -2199,11 +2199,7 @@ export namespace SessionPrompt {
     return undefined
   }
 
-  async function resolveTitleModel(input: {
-    providerID: string
-    modelID: string
-    agent: Agent.Info
-  }) {
+  async function resolveTitleModel(input: { providerID: string; modelID: string; agent: Agent.Info }) {
     if (input.agent.model) {
       const agentModel = await Provider.getModel(input.agent.model.providerID, input.agent.model.modelID)
       if (agentModel.providerID !== "codex") return agentModel

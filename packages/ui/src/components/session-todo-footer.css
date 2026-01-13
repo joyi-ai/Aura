@@ -1,6 +1,6 @@
 [data-component="session-todo-footer"] {
   position: sticky;
-  bottom: -12px;
+  bottom: 0;
   left: 0;
   right: 0;
   z-index: 30;

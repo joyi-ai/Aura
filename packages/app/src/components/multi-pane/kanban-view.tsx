@@ -192,8 +192,11 @@ function SidePanelSynced(props: { paneId: string; directory: string; sessionId?:
   const multiPane = useMultiPane()
   const sync = useSync()
   const sdk = useSDK()
-  const respondToPermission = (input: { sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) =>
-    sdk.client.permission.respond(input)
+  const respondToPermission = (input: {
+    sessionID: string
+    permissionID: string
+    response: "once" | "always" | "reject"
+  }) => sdk.client.permission.respond(input)
 
   const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
     const response = await fetch(`${sdk.url}/askuser/${input.requestID}/reply`, {

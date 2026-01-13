@@ -282,7 +282,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               })
 
           const messagesReq =
-            hasMessages && partsReady ? Promise.resolve() : loadMessages({ sessionID, limit, merge: hasMessages, parts: true })
+            hasMessages && partsReady
+              ? Promise.resolve()
+              : loadMessages({ sessionID, limit, merge: hasMessages, parts: true })
 
           const promise = Promise.all([sessionReq, messagesReq])
             .then(() => {})

@@ -65,8 +65,10 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
   )
   const [activeKey, setActiveKey] = createSignal<string | undefined>(undefined)
   const [restoring, setRestoring] = createSignal(false)
+  let skipRestoreKey: string | undefined
 
   function handleSessionCreated(sessionId: string) {
+    skipRestoreKey = sessionKeyFor(sessionId)
     multiPane.updatePane(props.paneId, { sessionId })
   }
 
@@ -191,15 +193,19 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
   createEffect(
     on(
       () => [props.paneId, props.sessionId, sdk.directory, sessionReady()] as const,
-      ([paneId, sessionId, , ready], prev) => {
+      ([paneId, sessionId, , ready]) => {
         if (!paneId) return
         const key = sessionKeyFor(sessionId)
         const session = ready && key ? untrack(() => sessionStore.entries[key]) : undefined
-        // Skip restoring mode when transitioning from empty pane to new session
-        // (the user just created a session, preserve their current mode selection)
-        const prevSessionId = prev?.[1]
-        const isNewSessionFromEmpty = prevSessionId === undefined && sessionId !== undefined
-        restorePaneState(paneId, session, key, isNewSessionFromEmpty)
+        if (skipRestoreKey && key !== skipRestoreKey) {
+          skipRestoreKey = undefined
+        }
+        // Skip restoring cached values for a session we just created in this pane.
+        if (skipRestoreKey && key === skipRestoreKey) {
+          setActiveKey(key)
+          return
+        }
+        restorePaneState(paneId, session, key)
       },
     ),
   )

@@ -55,176 +55,176 @@ export function ThemeDropup() {
         }
         class="w-64"
       >
-      <div class="flex flex-col gap-1" onMouseLeave={() => theme.cancelPreview()}>
-        <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border-weak-base">
-          <div class="text-11-medium text-text-weak px-2 py-1">Appearance</div>
-          <div class="flex gap-1">
-            <For each={COLOR_SCHEMES}>
-              {(scheme) => {
-                const selected = () => scheme.id === theme.colorScheme()
-                return (
-                  <Button
-                    size="small"
-                    variant={selected() ? "secondary" : "ghost"}
-                    class="flex-1 justify-center px-2"
-                    onClick={() => theme.setColorScheme(scheme.id)}
-                  >
-                    {scheme.label}
-                  </Button>
-                )
-              }}
-            </For>
-          </div>
-          <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Gradient</div>
-          <div
-            class="flex gap-1"
-            onMouseLeave={() => theme.cancelGradientModePreview()}
-            onFocusOut={(event) => {
-              const next = event.relatedTarget as HTMLElement | null
-              if (next && event.currentTarget.contains(next)) return
-              theme.cancelGradientModePreview()
-            }}
-          >
-            <For each={GRADIENT_MODES}>
-              {(mode) => {
-                const selected = () => mode.id === theme.gradientMode()
-                return (
-                  <Button
-                    size="small"
-                    variant={selected() ? "secondary" : "ghost"}
-                    class="flex-1 justify-center px-2"
-                    onClick={() => theme.setGradientMode(mode.id)}
-                    onMouseEnter={() => theme.previewGradientMode(mode.id)}
-                    onFocus={() => theme.previewGradientMode(mode.id)}
-                  >
-                    {mode.label}
-                  </Button>
-                )
-              }}
-            </For>
-          </div>
-          <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Color</div>
-          <div
-            class="flex gap-1"
-            onMouseLeave={() => theme.cancelGradientColorPreview()}
-            onFocusOut={(event) => {
-              const next = event.relatedTarget as HTMLElement | null
-              if (next && event.currentTarget.contains(next)) return
-              theme.cancelGradientColorPreview()
-            }}
-          >
-            <For each={GRADIENT_COLORS}>
-              {(color) => {
-                const selected = () => color.id === theme.gradientColor()
-                return (
-                  <Button
-                    size="small"
-                    variant={selected() ? "secondary" : "ghost"}
-                    class="flex-1 justify-center px-2"
-                    onClick={() => theme.setGradientColor(color.id)}
-                    onMouseEnter={() => theme.previewGradientColor(color.id)}
-                    onFocus={() => theme.previewGradientColor(color.id)}
-                  >
-                    {color.label}
-                  </Button>
-                )
-              }}
-            </For>
-          </div>
-          <Show when={theme.savedGradients().length > 0}>
-            <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Custom</div>
-            <div class="flex flex-col gap-0.5">
-              <For each={theme.savedGradients()}>
-                {(gradient) => {
-                  const isActive = () => theme.customGradient()?.name === gradient.name
+        <div class="flex flex-col gap-1" onMouseLeave={() => theme.cancelPreview()}>
+          <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border-weak-base">
+            <div class="text-11-medium text-text-weak px-2 py-1">Appearance</div>
+            <div class="flex gap-1">
+              <For each={COLOR_SCHEMES}>
+                {(scheme) => {
+                  const selected = () => scheme.id === theme.colorScheme()
                   return (
-                    <div class="group flex items-center gap-1">
-                      <Button
-                        size="small"
-                        variant={isActive() ? "secondary" : "ghost"}
-                        class="flex-1 justify-between px-2"
-                        onClick={() => {
-                          theme.selectGradient(gradient.name)
-                          setOpen(false)
-                        }}
-                      >
-                        <span class="truncate">{gradient.name}</span>
-                        <Show when={isActive()}>
-                          <Icon name="check-small" size="small" class="text-text-accent-base" />
-                        </Show>
-                      </Button>
-                      <div class="flex opacity-0 group-hover:opacity-100 transition-opacity">
-                        <IconButton
-                          icon="pencil-line"
-                          size="normal"
-                          variant="ghost"
-                          onClick={() => {
-                            setEditGradient(gradient)
-                            setOpen(false)
-                            setAdvancedOpen(true)
-                          }}
-                        />
-                        <IconButton
-                          icon="close"
-                          size="normal"
-                          variant="ghost"
-                          onClick={() => theme.deleteGradient(gradient.name)}
-                        />
-                      </div>
-                    </div>
+                    <Button
+                      size="small"
+                      variant={selected() ? "secondary" : "ghost"}
+                      class="flex-1 justify-center px-2"
+                      onClick={() => theme.setColorScheme(scheme.id)}
+                    >
+                      {scheme.label}
+                    </Button>
                   )
                 }}
               </For>
             </div>
-          </Show>
-          <Button
-            size="small"
-            variant="ghost"
-            class="justify-center px-2 mt-1"
-            onClick={() => {
-              setEditGradient(null)
-              setOpen(false)
-              setAdvancedOpen(true)
+            <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Gradient</div>
+            <div
+              class="flex gap-1"
+              onMouseLeave={() => theme.cancelGradientModePreview()}
+              onFocusOut={(event) => {
+                const next = event.relatedTarget as HTMLElement | null
+                if (next && event.currentTarget.contains(next)) return
+                theme.cancelGradientModePreview()
+              }}
+            >
+              <For each={GRADIENT_MODES}>
+                {(mode) => {
+                  const selected = () => mode.id === theme.gradientMode()
+                  return (
+                    <Button
+                      size="small"
+                      variant={selected() ? "secondary" : "ghost"}
+                      class="flex-1 justify-center px-2"
+                      onClick={() => theme.setGradientMode(mode.id)}
+                      onMouseEnter={() => theme.previewGradientMode(mode.id)}
+                      onFocus={() => theme.previewGradientMode(mode.id)}
+                    >
+                      {mode.label}
+                    </Button>
+                  )
+                }}
+              </For>
+            </div>
+            <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Color</div>
+            <div
+              class="flex gap-1"
+              onMouseLeave={() => theme.cancelGradientColorPreview()}
+              onFocusOut={(event) => {
+                const next = event.relatedTarget as HTMLElement | null
+                if (next && event.currentTarget.contains(next)) return
+                theme.cancelGradientColorPreview()
+              }}
+            >
+              <For each={GRADIENT_COLORS}>
+                {(color) => {
+                  const selected = () => color.id === theme.gradientColor()
+                  return (
+                    <Button
+                      size="small"
+                      variant={selected() ? "secondary" : "ghost"}
+                      class="flex-1 justify-center px-2"
+                      onClick={() => theme.setGradientColor(color.id)}
+                      onMouseEnter={() => theme.previewGradientColor(color.id)}
+                      onFocus={() => theme.previewGradientColor(color.id)}
+                    >
+                      {color.label}
+                    </Button>
+                  )
+                }}
+              </For>
+            </div>
+            <Show when={theme.savedGradients().length > 0}>
+              <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Custom</div>
+              <div class="flex flex-col gap-0.5">
+                <For each={theme.savedGradients()}>
+                  {(gradient) => {
+                    const isActive = () => theme.customGradient()?.name === gradient.name
+                    return (
+                      <div class="group flex items-center gap-1">
+                        <Button
+                          size="small"
+                          variant={isActive() ? "secondary" : "ghost"}
+                          class="flex-1 justify-between px-2"
+                          onClick={() => {
+                            theme.selectGradient(gradient.name)
+                            setOpen(false)
+                          }}
+                        >
+                          <span class="truncate">{gradient.name}</span>
+                          <Show when={isActive()}>
+                            <Icon name="check-small" size="small" class="text-text-accent-base" />
+                          </Show>
+                        </Button>
+                        <div class="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                          <IconButton
+                            icon="pencil-line"
+                            size="normal"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditGradient(gradient)
+                              setOpen(false)
+                              setAdvancedOpen(true)
+                            }}
+                          />
+                          <IconButton
+                            icon="close"
+                            size="normal"
+                            variant="ghost"
+                            onClick={() => theme.deleteGradient(gradient.name)}
+                          />
+                        </div>
+                      </div>
+                    )
+                  }}
+                </For>
+              </div>
+            </Show>
+            <Button
+              size="small"
+              variant="ghost"
+              class="justify-center px-2 mt-1"
+              onClick={() => {
+                setEditGradient(null)
+                setOpen(false)
+                setAdvancedOpen(true)
+              }}
+            >
+              + New Custom
+            </Button>
+          </div>
+          <div
+            class="flex flex-col gap-1"
+            onMouseLeave={() => theme.cancelThemePreview()}
+            onFocusOut={(event) => {
+              const next = event.relatedTarget as HTMLElement | null
+              if (next && event.currentTarget.contains(next)) return
+              theme.cancelThemePreview()
             }}
           >
-            + New Custom
-          </Button>
+            <For each={items()}>
+              {(item) => {
+                const selected = () => item.id === theme.themeId()
+                return (
+                  <Button
+                    size="normal"
+                    variant={selected() ? "secondary" : "ghost"}
+                    class="justify-between px-2"
+                    onClick={() => {
+                      theme.setTheme(item.id)
+                      theme.cancelPreview()
+                      setOpen(false)
+                    }}
+                    onMouseEnter={() => theme.previewTheme(item.id)}
+                    onFocus={() => theme.previewTheme(item.id)}
+                  >
+                    <span class="truncate">{item.name}</span>
+                    <Show when={selected()}>
+                      <Icon name="check-small" size="small" class="text-text-accent-base" />
+                    </Show>
+                  </Button>
+                )
+              }}
+            </For>
+          </div>
         </div>
-        <div
-          class="flex flex-col gap-1"
-          onMouseLeave={() => theme.cancelThemePreview()}
-          onFocusOut={(event) => {
-            const next = event.relatedTarget as HTMLElement | null
-            if (next && event.currentTarget.contains(next)) return
-            theme.cancelThemePreview()
-          }}
-        >
-          <For each={items()}>
-            {(item) => {
-              const selected = () => item.id === theme.themeId()
-              return (
-                <Button
-                  size="normal"
-                  variant={selected() ? "secondary" : "ghost"}
-                  class="justify-between px-2"
-                  onClick={() => {
-                    theme.setTheme(item.id)
-                    theme.cancelPreview()
-                    setOpen(false)
-                  }}
-                  onMouseEnter={() => theme.previewTheme(item.id)}
-                  onFocus={() => theme.previewTheme(item.id)}
-                >
-                  <span class="truncate">{item.name}</span>
-                  <Show when={selected()}>
-                    <Icon name="check-small" size="small" class="text-text-accent-base" />
-                  </Show>
-                </Button>
-              )
-            }}
-          </For>
-        </div>
-      </div>
       </Popover>
       <AdvancedThemePanel open={advancedOpen()} onOpenChange={setAdvancedOpen} editGradient={editGradient()} />
     </>

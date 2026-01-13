@@ -29,11 +29,7 @@ export namespace SessionSummary {
     return undefined
   }
 
-  async function resolveSummaryModel(input: {
-    providerID: string
-    modelID: string
-    agent?: Agent.Info
-  }) {
+  async function resolveSummaryModel(input: { providerID: string; modelID: string; agent?: Agent.Info }) {
     // For codex/claude-agent: just use opencode's gpt-5-nano
     if (input.providerID === "codex" || input.providerID === "claude-agent") {
       return resolveOpencodeSmallModel()

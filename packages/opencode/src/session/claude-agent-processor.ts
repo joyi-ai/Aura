@@ -183,8 +183,7 @@ export namespace ClaudeAgentProcessor {
   ): AsyncIterable<SDKUserMessage> {
     // Build content array
     const content: Array<
-      | { type: "text"; text: string }
-      | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+      { type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
     > = []
 
     // Add image blocks first (if any)
@@ -339,7 +338,10 @@ export namespace ClaudeAgentProcessor {
                 const oneHourAgo = Date.now() - 60 * 60 * 1000
                 if (newestPlan.mtime > oneHourAgo) {
                   planContent = await Bun.file(newestPlan.path).text()
-                  log.info("read plan content from most recent file (fallback)", { path: newestPlan.path, length: planContent.length })
+                  log.info("read plan content from most recent file (fallback)", {
+                    path: newestPlan.path,
+                    length: planContent.length,
+                  })
                 }
               }
             }

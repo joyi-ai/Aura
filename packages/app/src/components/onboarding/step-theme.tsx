@@ -95,10 +95,7 @@ export function StepTheme() {
 
                 <div data-slot="section">
                   <label data-slot="section-label">Gradient</label>
-                  <div
-                    data-slot="scheme-buttons"
-                    onMouseLeave={() => theme.cancelGradientModePreview()}
-                  >
+                  <div data-slot="scheme-buttons" onMouseLeave={() => theme.cancelGradientModePreview()}>
                     <For each={GRADIENT_MODES}>
                       {(mode) => {
                         const selected = () => mode.id === theme.gradientMode()
@@ -120,10 +117,7 @@ export function StepTheme() {
 
                 <div data-slot="section">
                   <label data-slot="section-label">Color</label>
-                  <div
-                    data-slot="scheme-buttons"
-                    onMouseLeave={() => theme.cancelGradientColorPreview()}
-                  >
+                  <div data-slot="scheme-buttons" onMouseLeave={() => theme.cancelGradientColorPreview()}>
                     <For each={GRADIENT_COLORS}>
                       {(color) => {
                         const selected = () => color.id === theme.gradientColor()
@@ -145,10 +139,7 @@ export function StepTheme() {
 
                 <div data-slot="section">
                   <label data-slot="section-label">Theme</label>
-                  <div
-                    data-slot="theme-list"
-                    onMouseLeave={() => theme.cancelThemePreview()}
-                  >
+                  <div data-slot="theme-list" onMouseLeave={() => theme.cancelThemePreview()}>
                     <For each={items()}>
                       {(item) => {
                         const selected = () => item.id === theme.themeId()
@@ -171,12 +162,7 @@ export function StepTheme() {
                   </div>
                 </div>
 
-                <Button
-                  size="small"
-                  variant="ghost"
-                  class="justify-center mt-2"
-                  onClick={() => setAdvancedOpen(true)}
-                >
+                <Button size="small" variant="ghost" class="justify-center mt-2" onClick={() => setAdvancedOpen(true)}>
                   Advanced Customization
                 </Button>
               </div>
@@ -194,11 +180,7 @@ export function StepTheme() {
         </Kobalte.Portal>
       </Kobalte>
 
-      <AdvancedThemePanel
-        open={advancedOpen()}
-        onOpenChange={setAdvancedOpen}
-        editGradient={null}
-      />
+      <AdvancedThemePanel open={advancedOpen()} onOpenChange={setAdvancedOpen} editGradient={null} />
     </Show>
   )
 }

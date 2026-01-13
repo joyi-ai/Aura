@@ -385,7 +385,9 @@ export namespace LSP {
 
   export async function documentSymbol(uri: string) {
     const file = fileURLToPath(uri)
-    const stats = await Bun.file(file).stat().catch(() => undefined)
+    const stats = await Bun.file(file)
+      .stat()
+      .catch(() => undefined)
     const existing = await state().then((x) => x.clients)
     const buffer = existing.flatMap((client) => {
       const value = client.fileVersion({ path: file })

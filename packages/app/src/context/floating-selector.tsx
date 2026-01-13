@@ -46,7 +46,7 @@ export function FloatingSelectorProvider(props: ParentProps) {
 
   const isInsideFloatingSelector = (target: EventTarget | null): boolean => {
     if (!(target instanceof Element)) return false
-    return !!target.closest('[data-floating-selector]')
+    return !!target.closest("[data-floating-selector]")
   }
 
   const restoreFocus = () => {
@@ -166,7 +166,16 @@ export function FloatingSelectorProvider(props: ParentProps) {
     // Don't close on modifier keys (Shift, Ctrl, Alt, Meta) or function keys
     const isModifier = e.key === "Shift" || e.key === "Control" || e.key === "Alt" || e.key === "Meta"
     const isFunctionKey = e.key.startsWith("F") && e.key.length > 1 && e.key.length <= 3
-    const isNavigationKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)
+    const isNavigationKey = [
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "PageUp",
+      "PageDown",
+    ].includes(e.key)
     const isSpecialKey = ["Tab", "CapsLock", "Insert", "Delete", "Backspace", "Enter"].includes(e.key)
 
     // Close on printable characters so they go to the input
@@ -213,11 +222,7 @@ export function FloatingSelectorProvider(props: ParentProps) {
     isHoldDragMode: () => isHoldDrag,
   }
 
-  return (
-    <FloatingSelectorContext.Provider value={value}>
-      {props.children}
-    </FloatingSelectorContext.Provider>
-  )
+  return <FloatingSelectorContext.Provider value={value}>{props.children}</FloatingSelectorContext.Provider>
 }
 
 export function useFloatingSelector() {

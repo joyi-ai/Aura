@@ -55,16 +55,8 @@ export function ColorPicker(props: ColorPickerProps) {
   return (
     <div {...others} data-component="color-picker" class={local.class}>
       <label data-slot="color-picker-swatch">
-        <input
-          type="color"
-          value={hexInput()}
-          onInput={handleColorInput}
-          data-slot="color-picker-input"
-        />
-        <span
-          data-slot="color-picker-preview"
-          style={{ "background-color": hexInput() }}
-        />
+        <input type="color" value={hexInput()} onInput={handleColorInput} data-slot="color-picker-input" />
+        <span data-slot="color-picker-preview" style={{ "background-color": hexInput() }} />
       </label>
       <input
         type="text"

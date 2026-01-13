@@ -63,12 +63,7 @@ export function StepProvider() {
 
   const handleSelect = (provider: Provider) => {
     onboarding.setSelectedProvider(provider.id)
-    dialog.show(() => (
-      <DialogConnectProvider
-        provider={provider.id}
-        onBack={() => dialog.close()}
-      />
-    ))
+    dialog.show(() => <DialogConnectProvider provider={provider.id} onBack={() => dialog.close()} />)
   }
 
   const handleContinue = () => {

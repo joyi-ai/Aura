@@ -141,11 +141,7 @@ export function AdvancedThemePanel(props: AdvancedThemePanelProps) {
             <div data-slot="panel-body">
               <div data-slot="section">
                 <label data-slot="section-label">Theme Name</label>
-                <TextField
-                  value={name()}
-                  onChange={(value) => setName(value)}
-                  placeholder="Custom Theme"
-                />
+                <TextField value={name()} onChange={(value) => setName(value)} placeholder="Custom Theme" />
               </div>
 
               <div data-slot="section">
@@ -211,10 +207,7 @@ export function AdvancedThemePanel(props: AdvancedThemePanelProps) {
                     {(label, index) => (
                       <div data-slot="color-picker-row">
                         <span data-slot="color-picker-label">{label}</span>
-                        <ColorPicker
-                          value={colors()[index()]}
-                          onChange={handleColorChange(index())}
-                        />
+                        <ColorPicker value={colors()[index()]} onChange={handleColorChange(index())} />
                       </div>
                     )}
                   </For>

@@ -374,9 +374,7 @@ export function SessionPane(props: SessionPaneProps) {
     if (!root) return
 
     const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(id)
-        : id.replaceAll('"', '\\"')
+      typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(id) : id.replaceAll('"', '\\"')
 
     const el = root.querySelector(`[data-message="${escaped}"]`) as HTMLElement | null
     if (!el) return

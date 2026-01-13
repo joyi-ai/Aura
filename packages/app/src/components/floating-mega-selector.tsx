@@ -96,8 +96,9 @@ const FloatingCardClusters: Component = () => {
                   classList={{
                     "bg-[var(--surface-info-base)] text-[var(--text-info-base)]":
                       currentModel()?.id === model.id && currentModel()?.provider.id === model.provider.id,
-                    "text-[var(--text-strong)]":
-                      !(currentModel()?.id === model.id && currentModel()?.provider.id === model.provider.id),
+                    "text-[var(--text-strong)]": !(
+                      currentModel()?.id === model.id && currentModel()?.provider.id === model.provider.id
+                    ),
                   }}
                   onClick={handleClick}
                   onMouseEnter={() => floatingSelector.setHoveredAction(handleClick)}

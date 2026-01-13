@@ -155,11 +155,24 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         )
       }
 
+      const move = (direction: 1 | -1) => {
+        const available = list().filter(isAvailable)
+        if (available.length === 0) return
+        const currentMode = current()
+        let next = available.findIndex((x) => x.id === currentMode?.id) + direction
+        if (next < 0) next = available.length - 1
+        if (next >= available.length) next = 0
+        const value = available[next]
+        if (!value) return
+        set(value.id)
+      }
+
       return {
         ready,
         list,
         current,
         set,
+        move,
         isAvailable,
         missingPlugins,
         isAgentAllowed,

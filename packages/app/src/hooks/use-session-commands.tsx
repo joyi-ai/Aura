@@ -162,6 +162,22 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       onSelect: () => local.agent.move(-1),
     },
     {
+      id: "mode.cycle",
+      title: "Cycle mode",
+      description: "Switch to the next mode",
+      category: "Mode",
+      keybind: "shift+tab",
+      slash: "mode",
+      disabled: !enabled(),
+      onSelect: () => {
+        local.mode.move(1)
+        showToast({
+          title: "Mode changed",
+          description: `Switched to ${local.mode.current()?.name ?? "default"} mode`,
+        })
+      },
+    },
+    {
       id: "model.variant.cycle",
       title: "Cycle thinking effort",
       description: "Switch to the next effort level",

@@ -28,11 +28,7 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
       <div data-component="session-todo-footer" data-collapsed={collapsed()}>
         <div data-slot="session-todo-footer-container">
           {/* Header with progress and collapse toggle */}
-          <button
-            data-slot="session-todo-footer-header"
-            onClick={() => setCollapsed((c) => !c)}
-            type="button"
-          >
+          <button data-slot="session-todo-footer-header" onClick={() => setCollapsed((c) => !c)} type="button">
             <div data-slot="session-todo-footer-progress">
               <div data-slot="session-todo-footer-progress-bar">
                 <div
@@ -44,11 +40,7 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
                 {counts().completed}/{counts().total}
               </span>
             </div>
-            <Icon
-              name="chevron-down"
-              size="small"
-              data-slot="session-todo-footer-chevron"
-            />
+            <Icon name="chevron-down" size="small" data-slot="session-todo-footer-chevron" />
           </button>
 
           {/* Todo list - collapsible */}

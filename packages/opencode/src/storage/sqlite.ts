@@ -158,9 +158,10 @@ export namespace StorageSqlite {
 
   export function readParts(sessionID: string, messageID: string) {
     const rows = db()
-      .query<{ data: string }, [string, string]>(
-        "SELECT data FROM message_parts WHERE sessionID = ? AND messageID = ? ORDER BY id ASC",
-      )
+      .query<
+        { data: string },
+        [string, string]
+      >("SELECT data FROM message_parts WHERE sessionID = ? AND messageID = ? ORDER BY id ASC")
       .all(sessionID, messageID)
     return rows.map((row) => JSON.parse(row.data))
   }

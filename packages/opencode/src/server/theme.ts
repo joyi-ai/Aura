@@ -20,7 +20,9 @@ type GradientTheme = z.infer<typeof GradientThemeSchema>
 
 async function getThemesDir(): Promise<string> {
   const dir = path.join(Instance.directory, ".opencode", "themes")
-  await Bun.file(dir).exists().catch(() => false)
+  await Bun.file(dir)
+    .exists()
+    .catch(() => false)
   try {
     await Bun.$`mkdir -p ${dir}`.quiet()
   } catch {}
@@ -44,8 +46,8 @@ export const ThemeRoute = new Hono()
                   z.object({
                     name: z.string(),
                     theme: GradientThemeSchema,
-                  })
-                )
+                  }),
+                ),
               ),
             },
           },
@@ -69,7 +71,7 @@ export const ThemeRoute = new Hono()
         }
       } catch {}
       return c.json(results)
-    }
+    },
   )
   .put(
     "/gradient/:name",
@@ -86,7 +88,7 @@ export const ThemeRoute = new Hono()
                 z.object({
                   success: z.boolean(),
                   path: z.string(),
-                })
+                }),
               ),
             },
           },
@@ -104,7 +106,7 @@ export const ThemeRoute = new Hono()
       const filepath = path.join(themesDir, `${safeName}.gradient.json`)
       await Bun.write(filepath, JSON.stringify(theme, null, 2))
       return c.json({ success: true, path: filepath })
-    }
+    },
   )
   .delete(
     "/gradient/:name",
@@ -120,7 +122,7 @@ export const ThemeRoute = new Hono()
               schema: resolver(
                 z.object({
                   success: z.boolean(),
-                })
+                }),
               ),
             },
           },
@@ -140,5 +142,5 @@ export const ThemeRoute = new Hono()
       }
       await Bun.$`rm ${filepath}`.quiet()
       return c.json({ success: true })
-    }
+    },
   )

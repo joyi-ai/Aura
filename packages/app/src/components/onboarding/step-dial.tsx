@@ -17,7 +17,14 @@ interface DialAction {
 
 const DIAL_ACTIONS: DialAction[] = [
   { action: "new", label: "New", icon: "plus", description: "Create a new pane", startAngle: 0, endAngle: 90 },
-  { action: "clone", label: "Clone", icon: "copy", description: "Duplicate current pane", startAngle: 90, endAngle: 180 },
+  {
+    action: "clone",
+    label: "Clone",
+    icon: "copy",
+    description: "Duplicate current pane",
+    startAngle: 90,
+    endAngle: 180,
+  },
   { action: "close", label: "Close", icon: "close", description: "Close current pane", startAngle: 180, endAngle: 270 },
   { action: "expand", label: "Expand", icon: "expand", description: "Toggle maximize", startAngle: 270, endAngle: 360 },
 ]
@@ -125,18 +132,11 @@ export function StepDial() {
                       {(segment, index) => (
                         <g transform={`translate(${segment.labelPos.x}, ${segment.labelPos.y})`}>
                           <foreignObject x="-10" y="-18" width="20" height="20" style={{ overflow: "visible" }}>
-                            <div
-                              data-slot="dial-icon"
-                              data-highlighted={highlightedIndex() === index()}
-                            >
+                            <div data-slot="dial-icon" data-highlighted={highlightedIndex() === index()}>
                               <Icon name={segment.icon as any} size="small" />
                             </div>
                           </foreignObject>
-                          <text
-                            y="12"
-                            data-slot="dial-label"
-                            data-highlighted={highlightedIndex() === index()}
-                          >
+                          <text y="12" data-slot="dial-label" data-highlighted={highlightedIndex() === index()}>
                             {segment.label}
                           </text>
                         </g>
@@ -151,10 +151,7 @@ export function StepDial() {
                 <div data-slot="actions-list">
                   <For each={DIAL_ACTIONS}>
                     {(action, index) => (
-                      <div
-                        data-slot="action-item"
-                        data-highlighted={highlightedIndex() === index()}
-                      >
+                      <div data-slot="action-item" data-highlighted={highlightedIndex() === index()}>
                         <div data-slot="action-icon">
                           <Icon name={action.icon as any} size="small" />
                         </div>

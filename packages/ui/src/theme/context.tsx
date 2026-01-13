@@ -135,7 +135,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       if (savedCustomGradient) {
         try {
           const parsed = JSON.parse(savedCustomGradient) as CustomGradient
-          if (parsed.name && typeof parsed.saturation === "number" && Array.isArray(parsed.colors) && parsed.colors.length === 5) {
+          if (
+            parsed.name &&
+            typeof parsed.saturation === "number" &&
+            Array.isArray(parsed.colors) &&
+            parsed.colors.length === 5
+          ) {
             setStore("customGradient", parsed)
           }
         } catch {}
