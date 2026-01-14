@@ -177,18 +177,20 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (meta.loading[sessionID]) return
 
       setMeta("loading", sessionID, true)
+      const requestedPartTypes = input.parts === false ? undefined : input.partTypes
+      const requestedExcludePartTypes =
+        input.parts === false
+          ? undefined
+          : input.partTypes && input.partTypes.length > 0
+            ? undefined
+            : (input.excludePartTypes ?? ["reasoning"])
       await retry(() =>
         sdk.client.session.messages({
           sessionID,
           limit: input.limit,
           afterID: input.afterID,
-          partTypes: input.parts === false ? undefined : input.partTypes?.join(","),
-          excludePartTypes:
-            input.parts === false
-              ? undefined
-              : input.partTypes && input.partTypes.length > 0
-                ? undefined
-                : (input.excludePartTypes ?? ["reasoning"]).join(","),
+          partTypes: requestedPartTypes?.join(","),
+          excludePartTypes: requestedExcludePartTypes?.join(","),
         }),
       )
         .then((messages) => {
@@ -200,6 +202,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             .sort((a, b) => a.id.localeCompare(b.id))
           const merge = input.merge ?? false
           const includeParts = input.parts ?? true
+          const partsFiltered =
+            includeParts &&
+            ((requestedPartTypes?.length ?? 0) > 0 || (requestedExcludePartTypes?.length ?? 0) > 0)
           const current = store().message[sessionID] ?? []
           const currentIds = current.map((m) => m.id)
           const nextIds = next.map((m) => m.id)
@@ -217,7 +222,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
             if (includeParts) {
               for (const message of items) {
-                mergeParts(setStore, sessionID, message.info.id, message.parts)
+                mergeParts(setStore, sessionID, message.info.id, message.parts, { merge: partsFiltered })
               }
               setMeta("parts", sessionID, true)
             }
