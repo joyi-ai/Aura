@@ -91,6 +91,14 @@
   gap: 2px;
   max-height: 160px;
   overflow-y: auto;
+  overflow: hidden;
+  transition:
+    max-height 200ms ease-out,
+    opacity 150ms ease-out;
+}
+
+[data-component="session-todo-footer"][data-collapsed="true"] [data-slot="session-todo-footer-list"] {
+  max-height: 24px;
 }
 
 [data-slot="session-todo-footer-item"] {

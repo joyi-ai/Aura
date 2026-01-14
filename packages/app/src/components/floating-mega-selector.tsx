@@ -88,7 +88,8 @@ const FloatingCardClusters: Component = () => {
         <div class="flex flex-col">
           <For each={models()}>
             {(model) => {
-              const handleClick = () => local.model.set({ modelID: model.id, providerID: model.provider.id })
+              const handleClick = () =>
+                local.model.set({ modelID: model.id, providerID: model.provider.id }, { recent: true })
               return (
                 <button
                   tabIndex={-1}

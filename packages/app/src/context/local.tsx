@@ -240,17 +240,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
         return mode.filterAgents(visible, active)
       })
-      const [store, setStore] = createStore<{
-        current?: string
-      }>({
-        current: list()[0]?.name,
-      })
+      const [store, setStore] = persisted(
+        Persist.global("agent", []),
+        createStore<{
+          current?: string
+          lastUsed?: string
+        }>({
+          current: undefined,
+          lastUsed: undefined,
+        }),
+      )
       return {
         list,
         current() {
           const available = list()
           if (available.length === 0) return undefined
           return available.find((x) => x.name === store.current) ?? available[0]
+        },
+        lastUsed() {
+          return store.lastUsed
         },
         set(name: string | undefined) {
           const available = list()
@@ -260,6 +268,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
           if (name && available.some((x) => x.name === name)) {
             setStore("current", name)
+            setStore("lastUsed", name)
             return
           }
           setStore("current", available[0].name)
@@ -584,6 +593,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         () => {
           const available = agent.list()
           if (available.length === 0) return
+          const lastUsed = agent.lastUsed()
+          if (lastUsed && available.some((item) => item.name === lastUsed)) {
+            agent.set(lastUsed)
+            return
+          }
           const preferred = mode.current()?.defaultAgent
           if (preferred && available.some((item) => item.name === preferred)) {
             agent.set(preferred)
@@ -603,6 +617,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
       const currentAgent = agent.current()
       if (currentAgent && available.some((item) => item.name === currentAgent.name)) return
+      const lastUsed = agent.lastUsed()
+      if (lastUsed && available.some((item) => item.name === lastUsed)) {
+        agent.set(lastUsed)
+        return
+      }
       const preferred = mode.current()?.defaultAgent
       if (preferred && available.some((item) => item.name === preferred)) {
         agent.set(preferred)

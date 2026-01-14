@@ -1,5 +1,6 @@
 import { Component, createMemo, createSignal, For, Show } from "solid-js"
 import { Icon } from "./icon"
+import { Spinner } from "./spinner"
 import type { ToolProps } from "./message-part"
 import { useData } from "../context/data"
 import "./ask-user-question.css"
@@ -14,6 +15,7 @@ interface AskUserQuestionItem {
   header: string
   options: AskUserQuestionOption[]
   multiSelect: boolean
+  allowOther?: boolean
 }
 
 interface AskUserQuestionInput {
@@ -216,31 +218,33 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
             </For>
 
             {/* Other option with custom input */}
-            <div data-slot="ask-user-other-container">
-              <button
-                type="button"
-                data-component="ask-user-chip"
-                data-selected={isOtherSelected(currentIndex())}
-                data-disabled={isSubmitting()}
-                onClick={() => toggleOther(currentIndex(), currentQuestion().multiSelect)}
-              >
-                <div data-slot="ask-user-chip-content">
-                  <span data-slot="ask-user-chip-label">Other</span>
-                  <span data-slot="ask-user-chip-description">Provide custom response</span>
-                </div>
-              </button>
+            <Show when={currentQuestion().allowOther !== false}>
+              <div data-slot="ask-user-other-container">
+                <button
+                  type="button"
+                  data-component="ask-user-chip"
+                  data-selected={isOtherSelected(currentIndex())}
+                  data-disabled={isSubmitting()}
+                  onClick={() => toggleOther(currentIndex(), currentQuestion().multiSelect)}
+                >
+                  <div data-slot="ask-user-chip-content">
+                    <span data-slot="ask-user-chip-label">Other</span>
+                    <span data-slot="ask-user-chip-description">Provide custom response</span>
+                  </div>
+                </button>
 
-              <Show when={isOtherSelected(currentIndex())}>
-                <input
-                  type="text"
-                  data-slot="ask-user-custom-input"
-                  placeholder="Enter your response..."
-                  value={getCustomInput(currentIndex())}
-                  onInput={(e) => updateCustomInput(currentIndex(), e.currentTarget.value)}
-                  disabled={isSubmitting()}
-                />
-              </Show>
-            </div>
+                <Show when={isOtherSelected(currentIndex())}>
+                  <input
+                    type="text"
+                    data-slot="ask-user-custom-input"
+                    placeholder="Enter your response..."
+                    value={getCustomInput(currentIndex())}
+                    onInput={(e) => updateCustomInput(currentIndex(), e.currentTarget.value)}
+                    disabled={isSubmitting()}
+                  />
+                </Show>
+              </div>
+            </Show>
           </div>
         </div>
       </Show>

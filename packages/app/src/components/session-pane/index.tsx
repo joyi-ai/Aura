@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createEffect, on, onCleanup, type Accessor } from "solid-js"
+import { For, Show, createMemo, createEffect, on, onCleanup, createSignal, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
@@ -234,6 +234,10 @@ export function SessionPane(props: SessionPaneProps) {
 
   let scrollIntentCleanup: (() => void) | undefined
 
+  // Todo footer collapse state and scroll tracking
+  const [todoCollapsed, setTodoCollapsed] = createSignal(false)
+  let lastScrollTop = 0
+
   let desktopScrollEl: HTMLDivElement | undefined
   const setDesktopScrollRef = (el: HTMLDivElement | undefined) => {
     if (scrollIntentCleanup) {
@@ -407,6 +411,13 @@ export function SessionPane(props: SessionPaneProps) {
     if (!root) return
     if (!id) return
 
+    // Detect scroll up to collapse todo footer
+    const currentScrollTop = root.scrollTop
+    if (currentScrollTop < lastScrollTop && currentScrollTop > 50) {
+      setTodoCollapsed(true)
+    }
+    lastScrollTop = currentScrollTop
+
     if (store.loadingMore) return
     if (root.scrollTop > 200) return
 
@@ -528,7 +539,11 @@ export function SessionPane(props: SessionPaneProps) {
             {/* Flexible spacer pushes footer to bottom for short content */}
             <div class="flex-1" />
             {/* Todo footer - sticky at bottom, hides when all complete */}
-            <SessionTodoFooter todos={todos()} />
+            <SessionTodoFooter
+              todos={todos()}
+              collapsed={todoCollapsed()}
+              onToggleCollapse={() => setTodoCollapsed((c) => !c)}
+            />
           </div>
         </div>
       </div>
