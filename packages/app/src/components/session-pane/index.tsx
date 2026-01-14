@@ -525,10 +525,10 @@ export function SessionPane(props: SessionPaneProps) {
             <Show when={todos().some((t) => t.status !== "completed")}>
               <div class="h-50 shrink-0" />
             </Show>
-            <div class="mt-auto">
-              {/* Todo footer - sticky at bottom, hides when all complete */}
-              <SessionTodoFooter todos={todos()} />
-            </div>
+            {/* Flexible spacer pushes footer to bottom for short content */}
+            <div class="flex-1" />
+            {/* Todo footer - sticky at bottom, hides when all complete */}
+            <SessionTodoFooter todos={todos()} />
           </div>
         </div>
       </div>

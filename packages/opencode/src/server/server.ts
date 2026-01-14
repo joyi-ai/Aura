@@ -300,6 +300,7 @@ export namespace Server {
   const app = new Hono()
   export const App = lazy(() => {
     return (
+      // @ts-expect-error - Hono type depth limit exceeded; runtime works fine
       (app as Hono)
         .onError((err, c) => {
           log.error("failed", {

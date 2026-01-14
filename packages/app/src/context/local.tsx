@@ -52,6 +52,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const providerOverride =
         override.providerOverride === null ? undefined : (override.providerOverride ?? base.providerOverride)
       const defaultAgent = override.defaultAgent === null ? undefined : (override.defaultAgent ?? base.defaultAgent)
+      const defaultModel = override.defaultModel === null ? undefined : (override.defaultModel ?? base.defaultModel)
+      const defaultVariant =
+        override.defaultVariant === null ? undefined : (override.defaultVariant ?? base.defaultVariant)
+      const defaultThinking =
+        override.defaultThinking === null ? undefined : (override.defaultThinking ?? base.defaultThinking)
       const mergedOverrides =
         base.overrides || override.overrides ? { ...(base.overrides ?? {}), ...(override.overrides ?? {}) } : undefined
 
@@ -62,6 +67,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         color: override.color ?? base.color,
         providerOverride,
         defaultAgent,
+        defaultModel,
+        defaultVariant,
+        defaultThinking,
         overrides: mergedOverrides,
       }
     }
@@ -284,13 +292,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           user: (ModelKey & { visibility: "show" | "hide"; favorite?: boolean })[]
           recent: ModelKey[]
           variant?: Record<string, string | undefined>
-          /** Extended thinking enabled for Claude Code (default: true) */
+          /** Extended thinking - undefined means use mode's defaultThinking */
           thinking?: boolean
         }>({
           user: [],
           recent: [],
           variant: {},
-          thinking: true,
         }),
       )
 
@@ -383,7 +390,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         if (providerOverride) {
           const provider = providers.connected().find((p) => p.id === providerOverride)
           if (provider) {
-            const modelID = providers.default()[providerOverride] ?? Object.keys(provider.models)[0]
+            // Use mode's defaultModel if specified, otherwise fall back to provider default
+            const modeDefaultModel = mode.current()?.defaultModel
+            const modelID =
+              (modeDefaultModel && provider.models[modeDefaultModel] ? modeDefaultModel : undefined) ??
+              providers.default()[providerOverride] ??
+              Object.keys(provider.models)[0]
             if (modelID) {
               return {
                 providerID: providerOverride,
@@ -506,7 +518,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const m = current()
             if (!m) return undefined
             const key = `${m.provider.id}/${m.id}`
-            return store.variant?.[key]
+            const userVariant = store.variant?.[key]
+            if (userVariant !== undefined) return userVariant
+            // Fall back to mode's default variant if available and valid for this model
+            const modeDefault = mode.current()?.defaultVariant
+            if (modeDefault && m.variants && modeDefault in m.variants) return modeDefault
+            return undefined
           },
           list() {
             const m = current()
@@ -542,9 +559,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         /** Extended thinking for Claude Code */
         thinking: {
-          /** Get current thinking state (default: true) */
+          /** Get current thinking state, respects mode's defaultThinking */
           current() {
-            return store.thinking !== false
+            // If user has explicitly set thinking, use that
+            if (store.thinking !== undefined) return store.thinking
+            // Otherwise use mode's default (defaults to false if not specified)
+            return mode.current()?.defaultThinking ?? false
           },
           /** Set thinking state */
           set(enabled: boolean) {

@@ -16,7 +16,19 @@ import { getDirectory, getFilename } from "@opencode-ai/util/path"
 
 import { Binary } from "@opencode-ai/util/binary"
 
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, ParentProps, Show, Switch } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  Match,
+  on,
+  onCleanup,
+  ParentProps,
+  Show,
+  Switch,
+} from "solid-js"
 
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 
@@ -483,15 +495,170 @@ export function SessionTurn(
     return result
   })
 
+  const taskToolParts = createMemo(() => {
+    const result: { part: ToolPart; message: AssistantMessage }[] = []
+
+    for (const item of allToolParts()) {
+      const tool = item.part.tool.toLowerCase()
+
+      if (tool !== "task") continue
+
+      result.push(item)
+    }
+
+    return result
+  })
+
   const stepsToolParts = createMemo(() => {
     const result: { part: ToolPart; message: AssistantMessage }[] = []
 
     for (const item of allToolParts()) {
       const tool = item.part.tool.toLowerCase()
 
-      if (tool === "askuserquestion" || tool === "exitplanmode") continue
+      if (tool === "askuserquestion" || tool === "exitplanmode" || tool === "task") continue
 
       result.push(item)
+    }
+
+    return result
+  })
+
+  const taskAgents = createMemo(() => {
+    const result: { id: string; name: string; status: string; done: boolean }[] = []
+
+    const normalizeDetail = (value: string | undefined) => {
+      if (!value) return value
+      const root = data.directory
+      if (!root) return value
+      const trimmed = value.split(root).join("")
+      if (trimmed.startsWith("\\") || trimmed.startsWith("/")) return trimmed.slice(1)
+      return trimmed
+    }
+
+    const readString = (value: unknown) => (typeof value === "string" ? value : undefined)
+
+    const readStringArray = (value: unknown) =>
+      Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : []
+
+    const formatToolLabel = (tool: string, input: Record<string, unknown>, title?: string) => {
+      const lower = tool.toLowerCase()
+      const info = getToolInfo(tool, input)
+      const base = (() => {
+        if (lower === "bash") return "Bash"
+        if (lower === "glob") return "Search"
+        if (lower === "grep") return "Search"
+        return info.title
+      })()
+
+      if (title) return `${base}: ${normalizeDetail(title)}`
+
+      if (lower === "bash") {
+        const description = readString(input.description) ?? readString(input.command)
+        if (description) return `${base}: ${normalizeDetail(description)}`
+      }
+
+      if (lower === "read") {
+        const filePath = readString(input.filePath) ?? readString(input.path)
+        if (filePath) return `${base}: ${normalizeDetail(filePath)}`
+      }
+
+      if (lower === "list") {
+        const pathValue = readString(input.path)
+        if (pathValue) return `${base}: ${normalizeDetail(pathValue)}`
+      }
+
+      if (lower === "glob") {
+        const pattern = readString(input.pattern)
+        if (pattern) return `${base}: ${normalizeDetail(pattern)}`
+      }
+
+      if (lower === "grep") {
+        const pattern = readString(input.pattern)
+        if (pattern) return `${base}: ${normalizeDetail(pattern)}`
+      }
+
+      if (lower === "edit" || lower === "write") {
+        const filePath = readString(input.filePath) ?? readString(input.path)
+        if (filePath) return `${base}: ${normalizeDetail(filePath)}`
+      }
+
+      if (lower === "webfetch") {
+        const url = readString(input.url)
+        if (url) return `${base}: ${url}`
+      }
+
+      if (lower === "patch") {
+        const files = readStringArray(input.files)
+        if (files.length > 0) return `${base}: ${normalizeDetail(files.join(", "))}`
+      }
+
+      if (info.subtitle) return `${base}: ${normalizeDetail(info.subtitle)}`
+
+      return base
+    }
+
+    const findSummaryTool = (
+      items: { tool: string; state: { status: string; title?: string } }[] | undefined,
+    ): { tool: string; state: { status: string; title?: string } } | undefined => {
+      if (!items || items.length === 0) return
+
+      const reversed = [...items].reverse()
+
+      const running = reversed.find((entry) => entry.state?.status === "running")
+
+      if (running) return running
+
+      return reversed[0]
+    }
+
+    const findChildPart = (sessionId: string | undefined) => {
+      if (!sessionId) return
+
+      const messages = data.store.message[sessionId] ?? emptyMessages
+
+      if (messages.length === 0) return
+
+      const reversed = [...messages].reverse()
+
+      for (const msg of reversed) {
+        if (!msg || msg.role !== "assistant") continue
+
+        const msgParts = data.store.part[msg.id] ?? emptyParts
+
+        if (msgParts.length === 0) continue
+
+        const reversedParts = [...msgParts].reverse()
+
+        const toolPart = reversedParts.find((part) => part?.type === "tool")
+        if (toolPart) return toolPart
+
+        return reversedParts.find((part) => !!part)
+      }
+    }
+
+    for (const item of taskToolParts()) {
+      const part = item.part
+      const input = part.state?.input as
+        | { subagent_type?: string; description?: string; agent?: string; name?: string }
+        | undefined
+      const name =
+        part.state?.title ?? input?.description ?? input?.subagent_type ?? input?.agent ?? input?.name ?? "agent"
+      const done = part.state?.status === "completed"
+      const meta = part.state?.metadata as
+        | { sessionId?: string; summary?: { tool: string; state: { status: string; title?: string } }[] }
+        | undefined
+      const childPart = findChildPart(meta?.sessionId)
+      const childTool = childPart?.type === "tool" ? (childPart as ToolPart) : undefined
+      const summaryTool = findSummaryTool(meta?.summary)
+      const childToolName = childTool?.tool ?? summaryTool?.tool
+      const toolInput = childTool?.state?.input ?? {}
+      const toolTitle = childTool?.state?.title ?? summaryTool?.state?.title
+      const toolLabel = childToolName ? formatToolLabel(childToolName, toolInput, toolTitle) : undefined
+      const fallbackStatus = computeStatusFromPart(childPart)
+      const current = toolLabel ?? fallbackStatus ?? "Thinking"
+      const status = done ? "done" : current
+
+      result.push({ id: part.id, name, status, done })
     }
 
     return result
@@ -998,42 +1165,63 @@ export function SessionTurn(
                       </div>
                     </Show>
 
-                    {/* Steps Container - unified for both collapsed and expanded */}
-
-                    <Show when={stepsToolParts().length > 0}>
-                      <div data-slot="session-turn-steps-section">
-                        <Show when={commentary()}>
-                          {(text) => <div data-slot="session-turn-commentary">{text()}</div>}
-                        </Show>
-
-                        <Show when={reasoning()}>
-                          {(text) => (
-                            <div data-slot="session-turn-reasoning-section">
-                              <Show when={!working()}>
-                                <button
-                                  type="button"
-                                  data-slot="session-turn-reasoning-trigger"
-                                  onClick={() => setStore("reasoningExpanded", (x) => !x)}
+                    <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
+                      <div data-slot="session-turn-steps-group">
+                        <Show when={taskAgents().length > 0}>
+                          <div data-slot="session-turn-task-agents">
+                            <Index each={taskAgents()}>
+                              {(agent) => (
+                                <div
+                                  data-slot="session-turn-task-agent"
+                                  data-done={agent().done ? "true" : "false"}
                                 >
-                                  Reasoning
-                                </button>
-                              </Show>
-
-                              <Show when={working() || store.reasoningExpanded}>
-                                <div data-slot="session-turn-reasoning">{text()}</div>
-                              </Show>
-                            </div>
-                          )}
+                                  <span data-slot="session-turn-task-agent-text">
+                                    {agent().name}: {agent().status}
+                                  </span>
+                                </div>
+                              )}
+                            </Index>
+                          </div>
                         </Show>
 
-                        <StepsContainer
-                          toolParts={stepsToolParts()}
-                          expanded={props.stepsExpanded ?? false}
-                          working={working()}
-                          status={store.status}
-                          duration={store.duration}
-                          onToggle={props.onStepsExpandedToggle ?? (() => {})}
-                        />
+                        {/* Steps Container - unified for both collapsed and expanded */}
+
+                        <Show when={stepsToolParts().length > 0}>
+                          <div data-slot="session-turn-steps-section">
+                            <Show when={commentary()}>
+                              {(text) => <div data-slot="session-turn-commentary">{text()}</div>}
+                            </Show>
+
+                            <Show when={reasoning()}>
+                              {(text) => (
+                                <div data-slot="session-turn-reasoning-section">
+                                  <Show when={!working()}>
+                                    <button
+                                      type="button"
+                                      data-slot="session-turn-reasoning-trigger"
+                                      onClick={() => setStore("reasoningExpanded", (x) => !x)}
+                                    >
+                                      Reasoning
+                                    </button>
+                                  </Show>
+
+                                  <Show when={working() || store.reasoningExpanded}>
+                                    <div data-slot="session-turn-reasoning">{text()}</div>
+                                  </Show>
+                                </div>
+                              )}
+                            </Show>
+
+                            <StepsContainer
+                              toolParts={stepsToolParts()}
+                              expanded={props.stepsExpanded ?? false}
+                              working={working()}
+                              status={store.status}
+                              duration={store.duration}
+                              onToggle={props.onStepsExpandedToggle ?? (() => {})}
+                            />
+                          </div>
+                        </Show>
                       </div>
                     </Show>
 

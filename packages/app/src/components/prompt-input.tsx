@@ -2561,8 +2561,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </div>
           </Show>
         </div>
-        <div class="relative p-3 flex items-center justify-between">
-          <div class="flex items-center justify-start gap-0.5">
+        <div class="relative h-12">
+          <div class="flex items-center gap-0.5 absolute left-3 bottom-2">
             <Switch>
               <Match when={store.mode === "shell"}>
                 <div class="flex items-center gap-2 px-2 h-6">

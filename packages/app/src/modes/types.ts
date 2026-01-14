@@ -10,6 +10,9 @@ export type ModeDefinition = {
   color?: string
   providerOverride?: ModeProviderOverride
   defaultAgent?: string
+  defaultModel?: string
+  defaultVariant?: string
+  defaultThinking?: boolean
   allowedAgents?: string[]
   disabledAgents?: string[]
   requiresPlugins?: string[]
@@ -23,5 +26,8 @@ export type ModeOverride = {
   color?: string
   providerOverride?: ModeProviderOverride | null
   defaultAgent?: string | null
+  defaultModel?: string | null
+  defaultVariant?: string | null
+  defaultThinking?: boolean | null
   overrides?: Record<string, unknown>
 }
