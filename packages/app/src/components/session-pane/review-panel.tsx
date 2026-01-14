@@ -36,6 +36,7 @@ export interface ReviewPanelProps {
   onDragStart?: (id: string) => void
   onDragEnd?: () => void
   activeDraggable?: string
+  onClose?: () => void
 }
 
 function FileVisual(props: { file: LocalFile; active?: boolean }): JSX.Element {
@@ -196,7 +197,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       >
         <DragDropSensors />
         <ConstrainDragYAxis />
-        <Tabs value={activeTab()} onChange={tabs().open}>
+        <Tabs value={activeTab()} onChange={tabs().open} style={{ "background-color": "transparent" }}>
           <div class="sticky top-0 shrink-0 flex">
             <Tabs.List>
               <Show when={props.diffs.length}>
@@ -250,6 +251,11 @@ export function ReviewPanel(props: ReviewPanelProps) {
                     onClick={() => dialog.show(() => <DialogSelectFile sessionKey={props.sessionKey} />)}
                   />
                 </TooltipKeybind>
+              </div>
+              <div class="h-full flex items-center justify-center border-b border-border-weak-base px-3">
+                <Tooltip value="Close review" placement="bottom">
+                  <IconButton icon="close" variant="ghost" onClick={props.onClose} />
+                </Tooltip>
               </div>
             </Tabs.List>
           </div>

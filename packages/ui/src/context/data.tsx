@@ -55,6 +55,8 @@ export type AskUserRespondFn = (input: { requestID: string; answers: Record<stri
 
 export type PlanModeRespondFn = (input: { requestID: string; approved: boolean }) => Promise<unknown>
 
+export type SetAgentFn = (name: string) => void
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -64,6 +66,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onNavigateToSession?: NavigateToSessionFn
     onAskUserRespond?: AskUserRespondFn
     onPlanModeRespond?: PlanModeRespondFn
+    onSetAgent?: SetAgentFn
   }) => {
     return {
       get store() {
@@ -76,6 +79,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       navigateToSession: props.onNavigateToSession,
       respondToAskUser: props.onAskUserRespond,
       respondToPlanMode: props.onPlanModeRespond,
+      setAgent: props.onSetAgent,
     }
   },
 })

@@ -501,7 +501,7 @@ export function SessionPane(props: SessionPaneProps) {
           class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
         >
           <div class="flex min-h-full flex-col">
-            <div ref={desktopAutoScroll.contentRef} class="flex flex-col gap-12">
+            <div ref={desktopAutoScroll.contentRef} class="flex flex-col">
               <For each={renderedUserMessages()}>
                 {(message) => (
                   <SessionTurn
@@ -583,10 +583,11 @@ export function SessionPane(props: SessionPaneProps) {
     >
       <Show when={hasMultiplePanes()}>
         <div
-          class="pointer-events-none absolute inset-0 z-30 border"
+          class="pointer-events-none absolute inset-0 z-30 border transition-opacity duration-150"
           classList={{
             "border-border-accent-base": isFocused(),
             "border-border-strong-base": !isFocused(),
+            "opacity-0": multiPane.maximizedPaneId() === props.paneId,
           }}
         />
       </Show>
@@ -676,6 +677,7 @@ export function SessionPane(props: SessionPaneProps) {
               activeDraggable={store.activeDraggable}
               onDragStart={(id) => setStore("activeDraggable", id)}
               onDragEnd={() => setStore("activeDraggable", undefined)}
+              onClose={() => view().reviewPanel.close()}
             />
           </Show>
         </div>

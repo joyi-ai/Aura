@@ -227,6 +227,7 @@ export function PaneGrid(props: PaneGridProps) {
     body.style.width = `${from.width}px`
     body.style.height = `${from.height}px`
     body.style.pointerEvents = "auto"
+    body.style.contain = "layout"
 
     const anim = body.animate(
       [
@@ -252,6 +253,7 @@ export function PaneGrid(props: PaneGridProps) {
         if (disposed) return
         if (maximizeAnimations.get(id) !== anim) return
         maximizeAnimations.delete(id)
+        body.style.contain = ""
         if (direction === "collapse") {
           restorePaneBody(id)
           return
@@ -263,6 +265,7 @@ export function PaneGrid(props: PaneGridProps) {
       },
       () => {
         releaseScrollLock(id)
+        body.style.contain = ""
       },
     )
   }

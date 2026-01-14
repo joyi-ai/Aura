@@ -11,7 +11,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SyncProvider, useSync } from "@/context/sync"
-import { LocalProvider } from "@/context/local"
+import { LocalProvider, useLocal } from "@/context/local"
 import { DataProvider } from "@opencode-ai/ui/context"
 import { TerminalProvider } from "@/context/terminal"
 import { PromptProvider } from "@/context/prompt"
@@ -32,6 +32,13 @@ import { useCommand } from "@/context/command"
 type MultiPanePageProps = {
   initialDir?: string
   initialSession?: string
+}
+
+// Bridge component to connect LocalProvider's agent setter to DataProvider
+function AgentBridge(props: { setAgentRef: (fn: (name: string) => void) => void; children: any }) {
+  const local = useLocal()
+  props.setAgentRef((name: string) => local.agent.set(name))
+  return props.children
 }
 
 // Provider wrapper for each pane (provides Local/Terminal context needed by SessionPane)
@@ -68,6 +75,9 @@ function PaneSyncedProviders(props: { paneId: string; directory: string; childre
     return response.json()
   }
 
+  // Use a ref to capture the agent setter from inside LocalProvider
+  let setAgentFn: ((name: string) => void) | undefined
+
   return (
     <DataProvider
       data={sync.data}
@@ -75,13 +85,16 @@ function PaneSyncedProviders(props: { paneId: string; directory: string; childre
       onPermissionRespond={respondToPermission}
       onAskUserRespond={respondToAskUser}
       onPlanModeRespond={respondToPlanMode}
+      onSetAgent={(name) => setAgentFn?.(name)}
     >
       <LocalProvider>
-        <TerminalProvider paneId={props.paneId}>
-          <FileProvider>
-            <PromptProvider paneId={props.paneId}>{props.children}</PromptProvider>
-          </FileProvider>
-        </TerminalProvider>
+        <AgentBridge setAgentRef={(fn) => (setAgentFn = fn)}>
+          <TerminalProvider paneId={props.paneId}>
+            <FileProvider>
+              <PromptProvider paneId={props.paneId}>{props.children}</PromptProvider>
+            </FileProvider>
+          </TerminalProvider>
+        </AgentBridge>
       </LocalProvider>
     </DataProvider>
   )
@@ -121,6 +134,9 @@ function GlobalPromptSynced(props: { paneId: string; directory: string; sessionI
     return response.json()
   }
 
+  // Use a ref to capture the agent setter from inside LocalProvider
+  let setAgentFn: ((name: string) => void) | undefined
+
   return (
     <DataProvider
       data={sync.data}
@@ -128,15 +144,18 @@ function GlobalPromptSynced(props: { paneId: string; directory: string; sessionI
       onPermissionRespond={respondToPermission}
       onAskUserRespond={respondToAskUser}
       onPlanModeRespond={respondToPlanMode}
+      onSetAgent={(name) => setAgentFn?.(name)}
     >
       <LocalProvider>
-        <TerminalProvider paneId={props.paneId}>
-          <FileProvider>
-            <PromptProvider paneId={props.paneId}>
-              <MultiPanePromptPanel paneId={props.paneId} sessionId={props.sessionId} />
-            </PromptProvider>
-          </FileProvider>
-        </TerminalProvider>
+        <AgentBridge setAgentRef={(fn) => (setAgentFn = fn)}>
+          <TerminalProvider paneId={props.paneId}>
+            <FileProvider>
+              <PromptProvider paneId={props.paneId}>
+                <MultiPanePromptPanel paneId={props.paneId} sessionId={props.sessionId} />
+              </PromptProvider>
+            </FileProvider>
+          </TerminalProvider>
+        </AgentBridge>
       </LocalProvider>
     </DataProvider>
   )

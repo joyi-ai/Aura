@@ -1,13 +1,20 @@
-import { createMemo, Show, type ParentProps } from "solid-js"
+import { createMemo, createSignal, Show, type ParentProps } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SyncProvider, useSync } from "@/context/sync"
-import { LocalProvider } from "@/context/local"
+import { LocalProvider, useLocal } from "@/context/local"
 
 import { base64Decode } from "@opencode-ai/util/encode"
 import { DataProvider } from "@opencode-ai/ui/context"
 import { iife } from "@opencode-ai/util/iife"
 import { useGlobalSDK } from "@/context/global-sdk"
+
+// Bridge component to connect LocalProvider's agent setter to DataProvider
+function AgentBridge(props: { setAgentRef: (fn: (name: string) => void) => void; children: any }) {
+  const local = useLocal()
+  props.setAgentRef((name: string) => local.agent.set(name))
+  return props.children
+}
 
 export default function Layout(props: ParentProps) {
   const params = useParams()
@@ -53,6 +60,9 @@ export default function Layout(props: ParentProps) {
               return response.json()
             }
 
+            // Use a signal to capture the agent setter from inside LocalProvider
+            let setAgentFn: ((name: string) => void) | undefined
+
             return (
               <DataProvider
                 data={sync.data}
@@ -60,8 +70,11 @@ export default function Layout(props: ParentProps) {
                 onPermissionRespond={respondToPermission}
                 onAskUserRespond={respondToAskUser}
                 onPlanModeRespond={respondToPlanMode}
+                onSetAgent={(name) => setAgentFn?.(name)}
               >
-                <LocalProvider>{props.children}</LocalProvider>
+                <LocalProvider>
+                  <AgentBridge setAgentRef={(fn) => (setAgentFn = fn)}>{props.children}</AgentBridge>
+                </LocalProvider>
               </DataProvider>
             )
           })}

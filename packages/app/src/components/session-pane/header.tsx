@@ -94,13 +94,6 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
               onClick={view().terminal.toggle}
             />
           </Tooltip>
-          <Tooltip value="Toggle review">
-            <IconButton
-              icon={view().reviewPanel.opened() ? "layout-right" : "layout-left"}
-              variant="ghost"
-              onClick={view().reviewPanel.toggle}
-            />
-          </Tooltip>
           <Show when={multiPane.panes().length > 1 || !!props.sessionId}>
             <Tooltip value="Close pane">
               <IconButton icon="close" variant="ghost" onClick={props.onClose} />

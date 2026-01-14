@@ -420,7 +420,8 @@ export namespace Session {
     const project = Instance.project
     const result = await Storage.update<Info>(["session", project.id, id], (draft) => {
       editor(draft)
-      draft.time.updated = Date.now()
+      // Note: time.updated is NOT automatically set here
+      // Use Session.touch() to explicitly update the timestamp (e.g., when a message is sent)
     })
 
     // Update cache

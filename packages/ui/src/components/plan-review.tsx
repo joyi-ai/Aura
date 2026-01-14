@@ -44,6 +44,8 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
         approved: true,
       })
       setSubmitted("approved")
+      // Auto-switch to build agent after plan approval
+      data.setAgent?.("build")
     } catch {
       setIsSubmitting(false)
     }
