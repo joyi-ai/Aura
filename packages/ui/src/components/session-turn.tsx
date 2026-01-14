@@ -642,9 +642,14 @@ export function SessionTurn(
         | { subagent_type?: string; description?: string; agent?: string; name?: string }
         | undefined
       const name =
-        part.state?.title ?? input?.description ?? input?.subagent_type ?? input?.agent ?? input?.name ?? "agent"
+        (part.state as { title?: string } | undefined)?.title ??
+        input?.description ??
+        input?.subagent_type ??
+        input?.agent ??
+        input?.name ??
+        "agent"
       const done = part.state?.status === "completed"
-      const meta = part.state?.metadata as
+      const meta = (part.state as { metadata?: { [key: string]: unknown } } | undefined)?.metadata as
         | { sessionId?: string; summary?: { tool: string; state: { status: string; title?: string } }[] }
         | undefined
       const childPart = findChildPart(meta?.sessionId)
@@ -652,7 +657,7 @@ export function SessionTurn(
       const summaryTool = findSummaryTool(meta?.summary)
       const childToolName = childTool?.tool ?? summaryTool?.tool
       const toolInput = childTool?.state?.input ?? {}
-      const toolTitle = childTool?.state?.title ?? summaryTool?.state?.title
+      const toolTitle = (childTool?.state as { title?: string } | undefined)?.title ?? summaryTool?.state?.title
       const toolLabel = childToolName ? formatToolLabel(childToolName, toolInput, toolTitle) : undefined
       const fallbackStatus = computeStatusFromPart(childPart)
       const current = toolLabel ?? fallbackStatus ?? "Thinking"
@@ -759,7 +764,7 @@ export function SessionTurn(
 
     if (!tail) return
 
-    if (start > 0) return `ƒ?İ${tail.trimStart()}`
+    if (start > 0) return `…${tail.trimStart()}`
 
     return tail
   })
