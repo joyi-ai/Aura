@@ -74,7 +74,6 @@ export namespace Command {
         get template() {
           return PROMPT_REVIEW.replace("${path}", Instance.worktree)
         },
-        subtask: true,
         hints: hints(PROMPT_REVIEW),
       },
     }

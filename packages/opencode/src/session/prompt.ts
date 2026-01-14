@@ -2161,6 +2161,10 @@ export namespace SessionPrompt {
       (agent.mode === "subagent" && command.subtask !== false) || command.subtask === true
         ? [
             {
+              type: "text" as const,
+              text: `/${input.command}${input.arguments ? ` ${input.arguments}` : ""}`,
+            },
+            {
               type: "subtask" as const,
               agent: agent.name,
               description: command.description ?? "",

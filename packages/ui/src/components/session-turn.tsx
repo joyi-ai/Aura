@@ -511,13 +511,45 @@ export function SessionTurn(
 
   const stepsToolParts = createMemo(() => {
     const result: { part: ToolPart; message: AssistantMessage }[] = []
+    const skip = new Set(["askuserquestion", "exitplanmode", "task"])
+    const seen = new Set<string>()
 
     for (const item of allToolParts()) {
       const tool = item.part.tool.toLowerCase()
 
-      if (tool === "askuserquestion" || tool === "exitplanmode" || tool === "task") continue
+      if (skip.has(tool)) continue
+      if (seen.has(item.part.id)) continue
 
+      seen.add(item.part.id)
       result.push(item)
+    }
+
+    for (const item of taskToolParts()) {
+      const input = item.part.state?.input as { command?: string } | undefined
+      if (!input?.command) continue
+
+      const meta = (item.part.state as { metadata?: { sessionId?: string } } | undefined)?.metadata
+      const sessionId = meta?.sessionId
+      if (!sessionId) continue
+
+      const messages = data.store.message[sessionId] ?? emptyMessages
+
+      for (const msg of messages) {
+        if (!msg || msg.role !== "assistant") continue
+
+        const msgParts = data.store.part[msg.id] ?? emptyParts
+
+        for (const part of msgParts) {
+          if (!part || part.type !== "tool") continue
+
+          const tool = (part as ToolPart).tool.toLowerCase()
+          if (skip.has(tool)) continue
+          if (seen.has(part.id)) continue
+
+          seen.add(part.id)
+          result.push({ part: part as ToolPart, message: msg as AssistantMessage })
+        }
+      }
     }
 
     return result
@@ -631,17 +663,52 @@ export function SessionTurn(
 
         const toolPart = reversedParts.find((part) => part?.type === "tool")
         if (toolPart) return toolPart
+      }
 
-        return reversedParts.find((part) => !!part)
+      for (const msg of reversed) {
+        if (!msg || msg.role !== "assistant") continue
+
+        const msgParts = data.store.part[msg.id] ?? emptyParts
+
+        if (msgParts.length === 0) continue
+
+        const reversedParts = [...msgParts].reverse()
+
+        const part = reversedParts.find((item) => !!item)
+        if (part) return part
+      }
+    }
+
+    const findCommandLabel = (parent: string | undefined) => {
+      if (!parent) return
+
+      const messages = allMessages()
+
+      const user = messages.find((msg) => msg.id === parent)
+      if (!user || user.role !== "user") return
+
+      const msgParts = data.store.part[user.id] ?? emptyParts
+
+      for (const part of msgParts) {
+        if (!part || part.type !== "text") continue
+
+        const text = (part as TextPart).text ?? ""
+        const trimmed = text.trim()
+
+        if (!trimmed.startsWith("/")) continue
+
+        return trimmed
       }
     }
 
     for (const item of taskToolParts()) {
       const part = item.part
       const input = part.state?.input as
-        | { subagent_type?: string; description?: string; agent?: string; name?: string }
+        | { subagent_type?: string; description?: string; agent?: string; name?: string; command?: string }
         | undefined
+      const cmd = input?.command ? findCommandLabel(item.message.parentID) : undefined
       const name =
+        cmd ??
         (part.state as { title?: string } | undefined)?.title ??
         input?.description ??
         input?.subagent_type ??
@@ -660,7 +727,8 @@ export function SessionTurn(
       const toolTitle = (childTool?.state as { title?: string } | undefined)?.title ?? summaryTool?.state?.title
       const toolLabel = childToolName ? formatToolLabel(childToolName, toolInput, toolTitle) : undefined
       const fallbackStatus = computeStatusFromPart(childPart)
-      const current = toolLabel ?? fallbackStatus ?? "Thinking"
+      const useToolLabel = !input?.command
+      const current = (useToolLabel ? toolLabel : undefined) ?? fallbackStatus ?? "Thinking"
       const status = done ? "done" : current
 
       result.push({ id: part.id, name, status, done })
