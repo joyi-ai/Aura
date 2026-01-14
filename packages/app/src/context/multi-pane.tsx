@@ -1,5 +1,5 @@
 import { createStore, produce } from "solid-js/store"
-import { batch, createMemo } from "solid-js"
+import { batch, createMemo, createEffect, createSignal, on, untrack } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { triggerShiftingGradient } from "@/components/shifting-gradient"
@@ -63,6 +63,45 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         maximizedPaneId: undefined,
         grid: {},
       }),
+    )
+    const [previous, setPrevious] = createSignal<PaneConfig[]>([])
+    const [restoring, setRestoring] = createSignal(false)
+
+    const paneSnapshot = createMemo(() =>
+      store.panes.map((pane) => ({
+        id: pane.id,
+        directory: pane.directory,
+        sessionId: pane.sessionId,
+      })),
+    )
+
+    createEffect(
+      on(
+        () => paneSnapshot(),
+        (next) => {
+          const prev = untrack(() => previous())
+          if (!prev.length) {
+            setPrevious(next)
+            return
+          }
+          if (restoring()) return
+          const prevHasDirectory = prev.some((pane) => !!pane.directory)
+          const nextHasDirectory = next.some((pane) => !!pane.directory)
+          if (prevHasDirectory && !nextHasDirectory && prev.length === next.length) {
+            setRestoring(true)
+            queueMicrotask(() => {
+              batch(() => {
+                setStore("panes", prev.map((pane) => ({ ...pane })))
+                setPrevious(prev)
+                setRestoring(false)
+              })
+            })
+            return
+          }
+          setPrevious(next)
+        },
+        { defer: true },
+      ),
     )
 
     const totalPages = createMemo(() => Math.max(1, Math.ceil(store.panes.length / MAX_PANES_PER_PAGE)))
