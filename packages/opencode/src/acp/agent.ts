@@ -729,7 +729,7 @@ export namespace ACP {
       const fallbackModeId = availableModes.find((m) => m.name === defaultAgentName)?.id ?? availableModes[0].id
       const sessionAgent = session?.agent
       const currentModeId = sessionAgent
-        ? availableModes.find((item) => item.id === sessionAgent)?.id ?? fallbackModeId
+        ? (availableModes.find((item) => item.id === sessionAgent)?.id ?? fallbackModeId)
         : fallbackModeId
       const currentModel = session?.model ?? model
       const currentModelId = `${currentModel.providerID}/${currentModel.modelID}`

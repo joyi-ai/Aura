@@ -6,6 +6,7 @@ import { SessionPane } from "@/components/session-pane"
 import { ReviewPanel } from "@/components/session-pane/review-panel"
 import { useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { SDKProvider, useSDK } from "@/context/sdk"
@@ -21,6 +22,8 @@ import { getDraggableId } from "@/utils/solid-dnd"
 import { ShiftingGradient, GRAIN_DATA_URI } from "@/components/shifting-gradient"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { showToast } from "@opencode-ai/ui/toast"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DialogDeleteWorktree } from "@/components/dialog-delete-worktree"
 import { MultiPanePromptPanel } from "@/components/multi-pane/prompt-panel"
 import { PaneHome } from "@/components/multi-pane/pane-home"
 import { getPaneProjectLabel, getPaneState, getPaneTitle } from "@/utils/pane"
@@ -231,6 +234,8 @@ function MultiPaneContent(props: MultiPanePageProps) {
   const multiPane = useMultiPane()
   const layout = useLayout()
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
+  const dialog = useDialog()
   const theme = useTheme()
   const command = useCommand()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -306,10 +311,49 @@ function MultiPaneContent(props: MultiPanePageProps) {
     })
   }
 
+  const closePaneWithWorktreeCheck = (paneId: string) => {
+    const pane = multiPane.panes().find((p) => p.id === paneId)
+    if (!pane?.sessionId || !pane?.directory) {
+      multiPane.removePane(paneId)
+      return
+    }
+
+    // Get session info from globalSync
+    const store = globalSync.child(pane.directory)[0]
+    const session = store.session.find((s) => s.id === pane.sessionId)
+    const worktreePath = (session as any)?.worktree?.path
+
+    if (!worktreePath) {
+      multiPane.removePane(paneId)
+      return
+    }
+
+    // Show confirmation dialog for worktree cleanup
+    dialog.show(() => (
+      <DialogDeleteWorktree
+        worktreePath={worktreePath}
+        onConfirm={async () => {
+          await globalSDK.client.session.worktree.delete({
+            sessionID: pane.sessionId!,
+            directory: pane.directory,
+          })
+          showToast({
+            title: "Worktree deleted",
+            variant: "success",
+          })
+          multiPane.removePane(paneId)
+        }}
+        onCancel={() => {
+          multiPane.removePane(paneId)
+        }}
+      />
+    ))
+  }
+
   const handleKeybindClosePane = () => {
     const focused = multiPane.focusedPaneId()
     if (!focused) return
-    multiPane.removePane(focused)
+    closePaneWithWorktreeCheck(focused)
   }
 
   const handleKeybindClonePane = () => {
@@ -525,73 +569,71 @@ function MultiPaneContent(props: MultiPanePageProps) {
           }
         >
           <div class="flex-1 min-h-0 flex">
-              <div class="flex-1 min-w-0 min-h-0 flex flex-col">
-                <DragDropProvider
-                  onDragStart={handlePaneDragStart}
-                  onDragEnd={handlePaneDragEnd}
-                  collisionDetector={closestCenter}
-                >
-                  <DragDropSensors />
-                  <PaneGrid
-                    panes={visiblePanes()}
-                    renderPane={(pane) => {
-                      const isFocused = createMemo(() => multiPane.focusedPaneId() === pane.id)
-                      const state = createMemo(() => getPaneState(pane))
-                      return (
-                        <Show
-                          when={state() === "session"}
-                          fallback={
-                            <PaneHome paneId={pane.id} isFocused={isFocused} selectedProject={pane.directory} />
-                          }
-                        >
-                          {(_) => (
-                            <SDKProvider directory={pane.directory!}>
-                              <SyncProvider>
-                                <PaneSyncedProviders paneId={pane.id} directory={pane.directory!}>
-                                  <SessionPane
-                                    paneId={pane.id}
-                                    directory={pane.directory!}
-                                    sessionId={pane.sessionId!}
-                                    isFocused={isFocused}
-                                    reviewMode="global"
-                                    onSessionChange={(sessionId: string | undefined) =>
-                                      multiPane.updatePane(pane.id, { sessionId })
-                                    }
-                                    onDirectoryChange={(dir: string) =>
-                                      multiPane.updatePane(pane.id, { directory: dir, sessionId: undefined })
-                                    }
-                                    onClose={() => multiPane.removePane(pane.id)}
-                                  />
-                                </PaneSyncedProviders>
-                              </SyncProvider>
-                            </SDKProvider>
-                          )}
+            <div class="flex-1 min-w-0 min-h-0 flex flex-col">
+              <DragDropProvider
+                onDragStart={handlePaneDragStart}
+                onDragEnd={handlePaneDragEnd}
+                collisionDetector={closestCenter}
+              >
+                <DragDropSensors />
+                <PaneGrid
+                  panes={visiblePanes()}
+                  renderPane={(pane) => {
+                    const isFocused = createMemo(() => multiPane.focusedPaneId() === pane.id)
+                    const state = createMemo(() => getPaneState(pane))
+                    return (
+                      <Show
+                        when={state() === "session"}
+                        fallback={<PaneHome paneId={pane.id} isFocused={isFocused} selectedProject={pane.directory} />}
+                      >
+                        {(_) => (
+                          <SDKProvider directory={pane.directory!}>
+                            <SyncProvider>
+                              <PaneSyncedProviders paneId={pane.id} directory={pane.directory!}>
+                                <SessionPane
+                                  paneId={pane.id}
+                                  directory={pane.directory!}
+                                  sessionId={pane.sessionId!}
+                                  isFocused={isFocused}
+                                  reviewMode="global"
+                                  onSessionChange={(sessionId: string | undefined) =>
+                                    multiPane.updatePane(pane.id, { sessionId })
+                                  }
+                                  onDirectoryChange={(dir: string) =>
+                                    multiPane.updatePane(pane.id, { directory: dir, sessionId: undefined })
+                                  }
+                                  onClose={() => closePaneWithWorktreeCheck(pane.id)}
+                                />
+                              </PaneSyncedProviders>
+                            </SyncProvider>
+                          </SDKProvider>
+                        )}
+                      </Show>
+                    )
+                  }}
+                />
+                <DragOverlay>
+                  <Show when={activeTitle()}>
+                    {(title) => (
+                      <div
+                        class="pointer-events-none rounded-md border border-border-weak-base px-3 py-2 shadow-xs-border-base"
+                        style={{ "background-color": dragOverlayBackground }}
+                      >
+                        <div class="text-12-medium text-text-strong">{title()}</div>
+                        <Show when={activeProject()}>
+                          {(project) => <div class="text-11-regular text-text-weak">{project()}</div>}
                         </Show>
-                      )
-                    }}
-                  />
-                  <DragOverlay>
-                    <Show when={activeTitle()}>
-                      {(title) => (
-                        <div
-                          class="pointer-events-none rounded-md border border-border-weak-base px-3 py-2 shadow-xs-border-base"
-                          style={{ "background-color": dragOverlayBackground }}
-                        >
-                          <div class="text-12-medium text-text-strong">{title()}</div>
-                          <Show when={activeProject()}>
-                            {(project) => <div class="text-11-regular text-text-weak">{project()}</div>}
-                          </Show>
-                        </div>
-                      )}
-                    </Show>
-                  </DragOverlay>
-                </DragDropProvider>
-              </div>
-              <Show when={!multiPane.maximizedPaneId()}>
-                <GlobalReviewWrapper />
-              </Show>
+                      </div>
+                    )}
+                  </Show>
+                </DragOverlay>
+              </DragDropProvider>
             </div>
-            <GlobalPromptWrapper />
+            <Show when={!multiPane.maximizedPaneId()}>
+              <GlobalReviewWrapper />
+            </Show>
+          </div>
+          <GlobalPromptWrapper />
         </Show>
       </div>
     </div>

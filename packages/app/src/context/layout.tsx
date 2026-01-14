@@ -262,14 +262,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     const enriched = createMemo(() => server.projects.list().flatMap(enrich))
     const list = createMemo(() => enriched().flatMap(colorize))
 
-    onMount(() => {
-      Promise.all(
-        server.projects.list().map((project) => {
-          return globalSync.project.loadSessions(project.worktree)
-        }),
-      )
-    })
-
     return {
       ready,
       projects: {

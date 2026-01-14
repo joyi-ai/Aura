@@ -185,6 +185,8 @@
     display: flex;
     align-items: start;
     gap: 8px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   [data-slot="message-part-tool-error-title"] {
@@ -200,9 +202,10 @@
 
   [data-slot="message-part-tool-error-message"] {
     color: var(--text-on-critical-weak);
-    max-height: 240px;
-    overflow-y: auto;
-    word-break: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
 }
 

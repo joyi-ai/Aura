@@ -646,7 +646,11 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                       setFormStore("error", undefined)
                       setFormStore("submitting", true)
                       try {
-                        console.log("Submitting OAuth callback:", { providerID: props.provider, method: store.methodIndex, hasCode: !!code })
+                        console.log("Submitting OAuth callback:", {
+                          providerID: props.provider,
+                          method: store.methodIndex,
+                          hasCode: !!code,
+                        })
                         const result = await withTimeout(
                           globalSDK.client.provider.oauth.callback({
                             providerID: props.provider,
@@ -696,7 +700,13 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                             error={formStore.error}
                             disabled={formStore.submitting}
                           />
-                          <Button class="w-auto" type="submit" size="large" variant="primary" disabled={formStore.submitting}>
+                          <Button
+                            class="w-auto"
+                            type="submit"
+                            size="large"
+                            variant="primary"
+                            disabled={formStore.submitting}
+                          >
                             <Show when={formStore.submitting} fallback="Submit">
                               <div class="flex items-center gap-2">
                                 <Spinner />

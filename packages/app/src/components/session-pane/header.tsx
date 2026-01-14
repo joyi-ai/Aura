@@ -26,8 +26,8 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
   const currentSession = createMemo(() => sessions().find((s) => s.id === props.sessionId))
   const branch = createMemo(() => sync.data.vcs?.branch)
   const focused = createMemo(() => props.isFocused?.() ?? true)
-  const sessionKey = createMemo(() =>
-    `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
+  const sessionKey = createMemo(
+    () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
   )
   const view = createMemo(() => layout.view(sessionKey()))
 

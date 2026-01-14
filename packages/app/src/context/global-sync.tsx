@@ -118,6 +118,7 @@ function createGlobalSync() {
   })
 
   const children: Record<string, ReturnType<typeof createStore<State>>> = {}
+  const sessionListInflight = new Map<string, { limit: number; promise: Promise<void> }>()
   function child(directory: string) {
     if (!directory) console.error("No directory provided")
     if (!children[directory]) {
@@ -150,8 +151,16 @@ function createGlobalSync() {
 
   async function loadSessions(directory: string) {
     const [store, setStore] = child(directory)
-    globalSDK.client.session
-      .list({ directory })
+    const limit = Math.max(1, store.limit)
+
+    const inflight = sessionListInflight.get(directory)
+    if (inflight) {
+      if (inflight.limit >= limit) return inflight.promise
+      return inflight.promise.finally(() => loadSessions(directory))
+    }
+
+    const promise = globalSDK.client.session
+      .list({ directory, limit })
       .then((x) => {
         const root = normalizeDirectory(directory)
         const fallback = normalizeDirectory(globalStore.path.directory)
@@ -166,23 +175,15 @@ function createGlobalSync() {
           if (!fallback) return false
           return root === fallback
         }
-        const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000
-        const nonArchived = (x.data ?? [])
+        const fetched = (x.data ?? [])
           .filter((s) => !!s?.id)
           .filter((s) => !s.time?.archived)
-          .slice()
-          .sort((a, b) => a.id.localeCompare(b.id))
           .filter((s) => allow(s.directory))
           .map((session) => {
             if (session.directory) return session
             return { ...session, directory }
           })
-        // Include up to the limit, plus any updated in the last 4 hours
-        const sessions = nonArchived.filter((s, i) => {
-          if (i < store.limit) return true
-          const updated = new Date(s.time?.updated ?? s.time?.created).getTime()
-          return updated > fourHoursAgo
-        })
+        const sessions = fetched.slice(0, limit).sort((a, b) => a.id.localeCompare(b.id))
         setStore("session", reconcile(sessions, { key: "id" }))
       })
       .catch((err) => {
@@ -190,6 +191,15 @@ function createGlobalSync() {
         const project = getFilename(directory)
         showToast({ title: `Failed to load sessions for ${project}`, description: err.message })
       })
+      .finally(() => {
+        const current = sessionListInflight.get(directory)
+        if (current?.promise === promise) {
+          sessionListInflight.delete(directory)
+        }
+      })
+
+    sessionListInflight.set(directory, { limit, promise })
+    return promise
   }
 
   async function bootstrapInstance(directory: string) {

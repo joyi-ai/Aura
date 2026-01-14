@@ -48,6 +48,7 @@ import { VoiceButton } from "@/components/voice-button"
 import { FloatingMegaSelector } from "@/components/floating-mega-selector"
 import { SettingsDialog } from "@/components/settings-dialog"
 import { DialogSelectModel } from "@/components/dialog-select-model"
+import { DialogDeleteWorktree } from "@/components/dialog-delete-worktree"
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, "application/pdf"]
@@ -652,7 +653,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         const actualThinkingChanged = payload.thinking !== session.thinking
 
         // If nothing actually differs from what's stored, skip the update
-        if (!actualModeChanged && !actualAgentChanged && !actualModelChanged && !actualVariantChanged && !actualThinkingChanged) return
+        if (
+          !actualModeChanged &&
+          !actualAgentChanged &&
+          !actualModelChanged &&
+          !actualVariantChanged &&
+          !actualThinkingChanged
+        )
+          return
 
         // Don't sync mode changes if session already has messages
         const sessionMessages = sync.data.message[sessionId]
@@ -2685,6 +2693,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
             <div class="flex items-center gap-2">
               <SessionContextUsage />
+              <Show when={(info() as any)?.worktree?.path}>
+                <button
+                  type="button"
+                  class="text-12-regular text-text-critical-base hover:text-text-critical-base-hover hover:underline"
+                  onClick={() => {
+                    const session = info()
+                    const worktreePath = (session as any)?.worktree?.path
+                    if (!worktreePath || !session) return
+                    dialog.show(() => (
+                      <DialogDeleteWorktree
+                        worktreePath={worktreePath}
+                        onConfirm={async () => {
+                          await sdk.client.session.worktree.delete({
+                            sessionID: session.id,
+                          })
+                          showToast({
+                            title: "Worktree deleted",
+                            variant: "success",
+                          })
+                        }}
+                      />
+                    ))
+                  }}
+                >
+                  Delete worktree
+                </button>
+              </Show>
               <Show when={store.mode === "normal"}>
                 <Tooltip placement="top" value="Attach image">
                   <Button type="button" variant="ghost" class="size-6" onClick={() => fileInputRef.click()}>

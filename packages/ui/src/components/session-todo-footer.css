@@ -18,7 +18,6 @@
   padding: 8px 12px;
   background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
   border: 1px solid var(--border-strong-base);
-  border-bottom: none;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   max-width: 320px;
 }
@@ -92,13 +91,26 @@
   max-height: 160px;
   overflow-y: auto;
   overflow: hidden;
-  transition:
-    max-height 200ms ease-out,
-    opacity 150ms ease-out;
 }
 
-[data-component="session-todo-footer"][data-collapsed="true"] [data-slot="session-todo-footer-list"] {
-  max-height: 24px;
+/* Grid wrapper for animated collapse/expand of other items */
+[data-slot="session-todo-footer-other-wrapper"] {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease-out;
+}
+
+[data-component="session-todo-footer"][data-collapsed="true"] [data-slot="session-todo-footer-other-wrapper"] {
+  grid-template-rows: 0fr;
+}
+
+/* Inner content - must have min-height: 0 for grid animation */
+[data-slot="session-todo-footer-other-items"] {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 [data-slot="session-todo-footer-item"] {

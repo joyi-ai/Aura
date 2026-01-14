@@ -65,8 +65,8 @@ export function SessionPane(props: SessionPaneProps) {
   const sdkDirectoryMatches = createMemo(() => expectedDirectory() !== "" && sdk.directory === expectedDirectory())
 
   // Session key for tabs
-  const sessionKey = createMemo(() =>
-    `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
+  const sessionKey = createMemo(
+    () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
   )
 
   // Tab management

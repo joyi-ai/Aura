@@ -64,7 +64,6 @@ import { useCommand, type CommandOption } from "@/context/command"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { navStart } from "@/utils/perf"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
-import { DialogWorktreeCleanup } from "@/components/dialog-worktree-cleanup"
 import { useServer } from "@/context/server"
 import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
 import { SettingsDialog } from "@/components/settings-dialog"
@@ -411,7 +410,7 @@ export default function Layout(props: ParentProps) {
     setPreview("session", {})
   })
 
-  const prefetchChunk = 30
+  const prefetchChunk = 50
   const prefetchConcurrency = 1
   const prefetchPendingLimit = 6
   const prefetchToken = { value: 0 }
@@ -461,6 +460,17 @@ export default function Layout(props: ParentProps) {
         batch(() => {
           if (store.message[sessionID] === undefined) {
             setStore("message", sessionID, reconcile(next, { key: "id" }))
+          }
+          for (const message of items) {
+            const messageId = message.info.id
+            if (!messageId) continue
+            if (store.part[messageId] !== undefined) continue
+            const parts = (message.parts ?? [])
+              .filter((p) => !!p?.id)
+              .slice()
+              .sort((a, b) => a.id.localeCompare(b.id))
+            if (parts.length === 0) continue
+            setStore("part", messageId, reconcile(parts, { key: "id" }))
           }
           setPreview("session", key, { status: "ready", lines, builtAt: Date.now() })
         })

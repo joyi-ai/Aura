@@ -25,9 +25,6 @@ bun test --coverage       # Run with coverage report
 ./packages/sdk/js/script/build.ts
 # Or from repo root:
 ./script/generate.ts
-
-# Code formatting
-./script/format.ts
 ```
 
 ## Architecture Overview

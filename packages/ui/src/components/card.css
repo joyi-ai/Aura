@@ -10,8 +10,9 @@
   overflow: clip;
 
   &[data-variant="error"] {
-    background-color: var(--surface-critical-weak);
+    background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
     border: 1px solid var(--border-critical-base);
+    border-radius: 0;
     color: var(--text-on-critical-base);
 
     /* text-12-regular */

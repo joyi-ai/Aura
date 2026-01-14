@@ -20,8 +20,11 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
     return { completed, total: props.todos.length }
   })
 
-  // Find in-progress task for collapsed view
+  // Find in-progress task (always visible)
   const inProgressTodo = createMemo(() => props.todos.find((t) => t.status === "in_progress"))
+
+  // Other todos (animated collapse/expand)
+  const otherTodos = createMemo(() => props.todos.filter((t) => t.status !== "in_progress"))
 
   // Hide footer when no active todos
   const shouldShow = createMemo(() => activeTodos().length > 0)
@@ -48,41 +51,39 @@ export function SessionTodoFooter(props: SessionTodoFooterProps) {
             <Icon name="chevron-down" size="small" data-slot="session-todo-footer-chevron" />
           </button>
 
-          {/* Todo list - full view when expanded */}
-          <Show when={!collapsed()}>
-            <div data-slot="session-todo-footer-list">
-              <For each={props.todos}>
-                {(todo) => (
-                  <div data-slot="session-todo-footer-item" data-status={todo.status}>
-                    <div data-slot="session-todo-footer-item-indicator">
-                      <Show when={todo.status === "completed"}>
-                        <Icon name="check" size="small" />
-                      </Show>
-                      <Show when={todo.status === "in_progress"}>
-                        <Spinner data-slot="session-todo-footer-spinner" />
-                      </Show>
-                      <Show when={todo.status === "pending"}>
-                        <div data-slot="session-todo-footer-item-dot" />
-                      </Show>
-                    </div>
-                    <span data-slot="session-todo-footer-item-text">{todo.content}</span>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-
-          {/* Collapsed view - only show in-progress task */}
-          <Show when={collapsed() && inProgressTodo()}>
-            <div data-slot="session-todo-footer-list">
+          {/* Todo list with animated expand/collapse */}
+          <div data-slot="session-todo-footer-list">
+            {/* In-progress item - always visible */}
+            <Show when={inProgressTodo()}>
               <div data-slot="session-todo-footer-item" data-status="in_progress">
                 <div data-slot="session-todo-footer-item-indicator">
                   <Spinner data-slot="session-todo-footer-spinner" />
                 </div>
                 <span data-slot="session-todo-footer-item-text">{inProgressTodo()!.content}</span>
               </div>
+            </Show>
+
+            {/* Other items - animated collapse/expand */}
+            <div data-slot="session-todo-footer-other-wrapper">
+              <div data-slot="session-todo-footer-other-items">
+                <For each={otherTodos()}>
+                  {(todo) => (
+                    <div data-slot="session-todo-footer-item" data-status={todo.status}>
+                      <div data-slot="session-todo-footer-item-indicator">
+                        <Show when={todo.status === "completed"}>
+                          <Icon name="check" size="small" />
+                        </Show>
+                        <Show when={todo.status === "pending"}>
+                          <div data-slot="session-todo-footer-item-dot" />
+                        </Show>
+                      </div>
+                      <span data-slot="session-todo-footer-item-text">{todo.content}</span>
+                    </div>
+                  )}
+                </For>
+              </div>
             </div>
-          </Show>
+          </div>
         </div>
       </div>
     </Show>

@@ -5,6 +5,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { triggerShiftingGradient } from "@/components/shifting-gradient"
 import { paneCache } from "@/components/multi-pane/pane-cache"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { Persist, persisted } from "@/utils/persist"
 
 export type PaneConfig = {
   id: string
@@ -53,13 +54,16 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
   name: "MultiPane",
   init: () => {
     const globalSDK = useGlobalSDK()
-    const [store, setStore] = createStore<MultiPaneState>({
-      panes: [],
-      currentPage: 0,
-      focusedPaneId: undefined,
-      maximizedPaneId: undefined,
-      grid: {},
-    })
+    const [store, setStore, _, ready] = persisted(
+      Persist.global("multi-pane", ["multi-pane.v1"]),
+      createStore<MultiPaneState>({
+        panes: [],
+        currentPage: 0,
+        focusedPaneId: undefined,
+        maximizedPaneId: undefined,
+        grid: {},
+      }),
+    )
 
     const totalPages = createMemo(() => Math.max(1, Math.ceil(store.panes.length / MAX_PANES_PER_PAGE)))
 
@@ -105,9 +109,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       const nextLayout = calculateLayout(visibleCount + 1)
       const shouldInsertIntoExpansionSlot =
         visibleCount > 0 && nextLayout.rows === prevLayout.rows && nextLayout.columns > prevLayout.columns
-      const localInsertIndex = shouldInsertIntoExpansionSlot
-        ? Math.min(prevLayout.columns, visibleCount)
-        : visibleCount
+      const localInsertIndex = shouldInsertIntoExpansionSlot ? Math.min(prevLayout.columns, visibleCount) : visibleCount
 
       const nextPanes = [...store.panes]
       nextPanes.splice(pageStart + localInsertIndex, 0, pane)
@@ -136,6 +138,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
     }
 
     return {
+      ready,
       panes: createMemo(() => store.panes),
       visiblePanes,
       currentPage: createMemo(() => store.currentPage),

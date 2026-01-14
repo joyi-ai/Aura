@@ -21,7 +21,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       return setter(...args)
     }) as SetStoreFunction<ChildStore>
     const absolute = (path: string) => (store().path.directory + "/" + path).replace("//", "/")
-    const chunk = 200
+    const chunk = 50
     const inflight = new Map<string, Promise<void>>()
     const inflightDiff = new Map<string, Promise<void>>()
     const inflightTodo = new Map<string, Promise<void>>()
@@ -264,7 +264,24 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           hydrateMessages(sessionID)
 
           const hasMessages = store().message[sessionID] !== undefined
-          const partsReady = meta.parts[sessionID] === true
+          let partsReady = meta.parts[sessionID] === true
+          if (hasMessages && !partsReady) {
+            const messages = store().message[sessionID] ?? []
+            if (messages.length > 0) {
+              let ready = true
+              for (const message of messages) {
+                if (!store().part[message.id]) {
+                  ready = false
+                  continue
+                }
+                recordParts(setStore, sessionID, message.id)
+              }
+              if (ready) {
+                setMeta("parts", sessionID, true)
+                partsReady = true
+              }
+            }
+          }
           if (hasSession && hasMessages && partsReady) return
 
           const pending = inflight.get(sessionID)
