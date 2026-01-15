@@ -1,7 +1,7 @@
 import { defineConfig } from "vite"
 import appPlugin from "@opencode-ai/app/vite"
 
-const host = process.env.TAURI_DEV_HOST
+const host = process.env.TAURI_DEV_HOST || "127.0.0.1"
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -20,14 +20,14 @@ export default defineConfig({
   // },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 5173,
     strictPort: true,
-    host: host || false,
+    host,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+        port: 5174,
         }
       : undefined,
     watch: {

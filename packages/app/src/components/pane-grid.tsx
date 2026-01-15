@@ -25,7 +25,6 @@ export function PaneGrid(props: PaneGridProps) {
   const paneBodyRefs = new Map<string, HTMLDivElement>()
   const paneAnimations = new Map<string, Animation>()
   const maximizeAnimations = new Map<string, Animation>()
-  const scrollLocks = new Map<string, () => void>()
   let previousRects = new Map<string, DOMRect>()
   let disposed = false
   let resizeCleanup: (() => void) | null = null
@@ -67,70 +66,12 @@ export function PaneGrid(props: PaneGridProps) {
     if (pendingFrame) cancelAnimationFrame(pendingFrame)
     for (const anim of paneAnimations.values()) anim.cancel()
     for (const anim of maximizeAnimations.values()) anim.cancel()
-    for (const release of scrollLocks.values()) release()
-    scrollLocks.clear()
     paneRefs.clear()
     paneBodyRefs.clear()
     paneAnimations.clear()
     maximizeAnimations.clear()
     previousRects.clear()
   })
-
-  type ScrollSnapshot = {
-    el: HTMLElement
-    top: number
-    left: number
-    anchor: string
-  }
-
-  function snapshotScroll(root: HTMLElement) {
-    const scrollables = root.querySelectorAll<HTMLElement>(".overflow-y-auto, .overflow-auto, [style*='overflow']")
-    return Array.from(scrollables).map((el) => ({
-      el,
-      top: el.scrollTop,
-      left: el.scrollLeft,
-      anchor: el.style.overflowAnchor,
-    }))
-  }
-
-  function restoreScroll(items: ScrollSnapshot[]) {
-    for (const item of items) {
-      item.el.scrollTop = item.top
-      item.el.scrollLeft = item.left
-    }
-  }
-
-  function lockScroll(items: ScrollSnapshot[]) {
-    if (items.length === 0) return () => {}
-
-    for (const item of items) {
-      item.el.style.overflowAnchor = "none"
-    }
-
-    const state = { frame: undefined as number | undefined, active: true }
-    const tick = () => {
-      if (!state.active) return
-      restoreScroll(items)
-      state.frame = requestAnimationFrame(tick)
-    }
-    state.frame = requestAnimationFrame(tick)
-
-    return () => {
-      state.active = false
-      if (state.frame !== undefined) cancelAnimationFrame(state.frame)
-      for (const item of items) {
-        item.el.style.overflowAnchor = item.anchor
-      }
-      restoreScroll(items)
-    }
-  }
-
-  function releaseScrollLock(id: string) {
-    const release = scrollLocks.get(id)
-    if (!release) return
-    scrollLocks.delete(id)
-    release()
-  }
 
   function restorePaneBody(id: string) {
     const maxId = maximizedPaneId()
@@ -139,13 +80,7 @@ export function PaneGrid(props: PaneGridProps) {
     if (!body) return
     const slot = paneRefs.get(id)
     if (slot && body.parentElement !== slot) {
-      // Save scroll positions before DOM move
-      const scrollPositions = snapshotScroll(body)
-
       slot.appendChild(body)
-
-      // Restore scroll positions after DOM move
-      restoreScroll(scrollPositions)
     }
     body.style.position = ""
     body.style.left = ""
@@ -187,8 +122,6 @@ export function PaneGrid(props: PaneGridProps) {
     const slot = paneRefs.get(id)
     if (!body || !slot) return
 
-    releaseScrollLock(id)
-
     const containerRect = containerRef.getBoundingClientRect()
     const slotRect = slot.getBoundingClientRect()
     const slotLeft = slotRect.left - containerRect.left
@@ -212,15 +145,8 @@ export function PaneGrid(props: PaneGridProps) {
     paneAnimations.get(id)?.cancel()
     paneAnimations.delete(id)
 
-    // Save scroll positions before DOM move
-    const scrollPositions = snapshotScroll(body)
-    const releaseLock = lockScroll(scrollPositions)
-    scrollLocks.set(id, releaseLock)
-
     overlayRef.appendChild(body)
 
-    // Restore scroll positions after DOM move
-    restoreScroll(scrollPositions)
     body.style.position = "absolute"
     body.style.left = `${from.left}px`
     body.style.top = `${from.top}px`
@@ -249,7 +175,6 @@ export function PaneGrid(props: PaneGridProps) {
     maximizeAnimations.set(id, anim)
     anim.finished.then(
       () => {
-        releaseScrollLock(id)
         if (disposed) return
         if (maximizeAnimations.get(id) !== anim) return
         maximizeAnimations.delete(id)
@@ -264,7 +189,6 @@ export function PaneGrid(props: PaneGridProps) {
         body.style.height = `${to.height}px`
       },
       () => {
-        releaseScrollLock(id)
         body.style.contain = ""
       },
     )
@@ -420,13 +344,7 @@ export function PaneGrid(props: PaneGridProps) {
         paneAnimations.get(id)?.cancel()
         paneAnimations.delete(id)
 
-        // Save scroll positions before DOM move
-        const scrollPositions = snapshotScroll(body)
-
         overlayRef.appendChild(body)
-
-        // Restore scroll positions after DOM move
-        restoreScroll(scrollPositions)
 
         body.style.position = "absolute"
         body.style.left = `${oldLeft}px`

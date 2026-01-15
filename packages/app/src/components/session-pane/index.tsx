@@ -1,10 +1,9 @@
-import { For, Show, createMemo, createEffect, on, onCleanup, createSignal, type Accessor } from "solid-js"
+import { For, Show, createMemo, createEffect, on, createSignal, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { SessionTodoFooter } from "@opencode-ai/ui/session-todo-footer"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
-import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { DateTime } from "luxon"
 import { createDraggable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
@@ -43,13 +42,8 @@ export function SessionPane(props: SessionPaneProps) {
   // Local state
   const [store, setStore] = createStore({
     stepsExpanded: {} as Record<string, boolean>,
-    userInteracted: false,
     turnLimit: 30,
-    didRestoreScroll: {} as Record<string, boolean>,
     loadingMore: false,
-    pendingTopScrollId: undefined as string | undefined,
-    pendingTopScrollCanceled: false,
-    pendingTopScrollFrame: undefined as number | undefined,
   })
 
   const sessionId = createMemo(() => props.sessionId)
@@ -141,16 +135,6 @@ export function SessionPane(props: SessionPaneProps) {
     ),
   )
 
-  // Reset user interaction on session change
-  createEffect(
-    on(
-      () => sessionId(),
-      () => {
-        setStore("userInteracted", false)
-      },
-    ),
-  )
-
   createEffect(
     on(
       () => sessionId(),
@@ -186,154 +170,10 @@ export function SessionPane(props: SessionPaneProps) {
     visibleUserMessages: sessionMessages.visibleUserMessages,
   })
 
-
   const sessionTurnPadding = () => "pb-0"
 
-  const desktopAutoScroll = createAutoScroll({
-    working,
-    onUserInteracted: () => {
-      setStore("userInteracted", true)
-    },
-  })
-
-  const handleUserScrollIntent = () => {
-    if (!store.pendingTopScrollId) return
-    setStore("pendingTopScrollCanceled", true)
-  }
-
-  let scrollIntentCleanup: (() => void) | undefined
-
-  // Todo footer collapse state and scroll tracking
+  // Todo footer collapse state
   const [todoCollapsed, setTodoCollapsed] = createSignal(false)
-  let lastScrollTop = 0
-
-  let desktopScrollEl: HTMLDivElement | undefined
-  const setDesktopScrollRef = (el: HTMLDivElement | undefined) => {
-    if (scrollIntentCleanup) {
-      scrollIntentCleanup()
-      scrollIntentCleanup = undefined
-    }
-
-    desktopScrollEl = el
-    desktopAutoScroll.scrollRef(el)
-    requestAnimationFrame(() => restoreDesktopScroll())
-
-    if (!el) return
-
-    el.addEventListener("wheel", handleUserScrollIntent, { passive: true })
-    el.addEventListener("pointerdown", handleUserScrollIntent)
-    el.addEventListener("touchstart", handleUserScrollIntent, { passive: true })
-
-    scrollIntentCleanup = () => {
-      el.removeEventListener("wheel", handleUserScrollIntent)
-      el.removeEventListener("pointerdown", handleUserScrollIntent)
-      el.removeEventListener("touchstart", handleUserScrollIntent)
-    }
-  }
-
-  const restoreDesktopScroll = (retries = 0) => {
-    const root = desktopScrollEl
-    if (!root) return
-
-    const key = sessionKey()
-    if (store.didRestoreScroll[key]) return
-    if (renderedUserMessages().length === 0) return
-
-    // Wait for content to be scrollable - content may not have rendered yet
-    if (root.scrollHeight <= root.clientHeight && retries < 10) {
-      requestAnimationFrame(() => restoreDesktopScroll(retries + 1))
-      return
-    }
-
-    // Always open sessions at the bottom
-    desktopAutoScroll.forceScrollToBottom()
-    setStore("didRestoreScroll", key, true)
-  }
-
-  createEffect(
-    on(
-      () => renderedUserMessages().length,
-      () => {
-        requestAnimationFrame(() => restoreDesktopScroll())
-      },
-      { defer: true },
-    ),
-  )
-
-  onCleanup(() => {
-    if (scrollIntentCleanup) scrollIntentCleanup()
-
-    const pending = store.pendingTopScrollFrame
-    if (!pending) return
-    cancelAnimationFrame(pending)
-  })
-
-  const scrollToMessage = (
-    id: string,
-    behavior: ScrollBehavior = "smooth",
-    block: ScrollLogicalPosition = "center",
-  ) => {
-    const root = desktopScrollEl
-    if (!root) return
-
-    const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(id) : id.replaceAll('"', '\\"')
-
-    const el = root.querySelector(`[data-message="${escaped}"]`) as HTMLElement | null
-    if (!el) return
-    el.scrollIntoView({ block, behavior })
-  }
-
-  const scheduleScrollToMessageTop = (id: string) => {
-    if (!desktopScrollEl) return
-
-    const pending = store.pendingTopScrollFrame
-    if (pending) cancelAnimationFrame(pending)
-
-    setStore({
-      pendingTopScrollId: id,
-      pendingTopScrollCanceled: false,
-      pendingTopScrollFrame: undefined,
-    })
-
-    const frame = requestAnimationFrame(() => {
-      if (store.pendingTopScrollId !== id) return
-
-      if (store.pendingTopScrollCanceled) {
-        setStore({
-          pendingTopScrollId: undefined,
-          pendingTopScrollCanceled: false,
-          pendingTopScrollFrame: undefined,
-        })
-        return
-      }
-
-      scrollToMessage(id, "smooth", "start")
-      desktopAutoScroll.handleInteraction()
-      setStore({
-        pendingTopScrollId: undefined,
-        pendingTopScrollCanceled: false,
-        pendingTopScrollFrame: undefined,
-      })
-    })
-
-    setStore("pendingTopScrollFrame", frame)
-  }
-
-  // Reset message ID when new message arrives
-  createEffect(
-    on(
-      () => sessionMessages.visibleUserMessages().at(-1)?.id,
-      (lastId, prevLastId) => {
-        if (!lastId) return
-        if (!prevLastId) return
-        if (lastId <= prevLastId) return
-        sessionMessages.resetToLast()
-        scheduleScrollToMessageTop(lastId)
-      },
-      { defer: true },
-    ),
-  )
 
   const handleMessageSelect = (message: UserMessage) => {
     const visible = sessionMessages.visibleUserMessages()
@@ -343,82 +183,6 @@ export function SessionPane(props: SessionPaneProps) {
     if (expandsWindow) setStore("turnLimit", needed + 5)
 
     sessionMessages.setActiveMessage(message)
-
-    const last = sessionMessages.lastUserMessage()?.id
-    if (last && message.id === last) {
-      desktopAutoScroll.forceScrollToBottom()
-      return
-    }
-
-    if (expandsWindow) {
-      setTimeout(() => scrollToMessage(message.id), 0)
-      return
-    }
-
-    scrollToMessage(message.id)
-  }
-
-  createEffect(
-    on(
-      () => sessionMessages.activeMessage()?.id,
-      (id, prev) => {
-        if (!id) return
-        if (!prev) return
-        if (id === prev) return
-        if (working()) return
-        scrollToMessage(id)
-      },
-      { defer: true },
-    ),
-  )
-
-  const handleDesktopScroll = () => {
-    desktopAutoScroll.handleScroll()
-
-    const root = desktopScrollEl
-    const id = sessionId()
-    if (!root) return
-    if (!id) return
-
-    // Detect scroll up to collapse todo footer
-    const currentScrollTop = root.scrollTop
-    if (currentScrollTop < lastScrollTop && currentScrollTop > 50) {
-      setTodoCollapsed(true)
-    }
-    lastScrollTop = currentScrollTop
-
-    if (store.loadingMore) return
-    if (root.scrollTop > 200) return
-
-    const visible = sessionMessages.visibleUserMessages()
-    const beforeHeight = root.scrollHeight
-    const beforeTop = root.scrollTop
-
-    if (store.turnLimit < visible.length) {
-      setStore("turnLimit", (x) => Math.min(visible.length, x + 20))
-      requestAnimationFrame(() => {
-        const afterHeight = root.scrollHeight
-        root.scrollTop = beforeTop + (afterHeight - beforeHeight)
-      })
-      return
-    }
-
-    if (!sync.session.history.more(id)) return
-    if (sync.session.history.loading(id)) return
-
-    setStore("loadingMore", true)
-    void sync.session.history
-      .loadMore(id, 50)
-      .then(() => {
-        setStore("turnLimit", (x) => x + 50)
-        requestAnimationFrame(() => {
-          const afterHeight = root.scrollHeight
-          root.scrollTop = beforeTop + (afterHeight - beforeHeight)
-        })
-      })
-      .finally(() => {
-        setStore("loadingMore", false)
-      })
   }
 
   // New session view
@@ -463,14 +227,9 @@ export function SessionPane(props: SessionPaneProps) {
           onMessageSelect={handleMessageSelect}
           wide={true}
         />
-        <div
-          ref={setDesktopScrollRef}
-          onScroll={handleDesktopScroll}
-          onClick={desktopAutoScroll.handleInteraction}
-          class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
-        >
+        <div class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}>
           <div class="flex min-h-full flex-col">
-            <div ref={desktopAutoScroll.contentRef} class="flex flex-col">
+            <div class="flex flex-col">
               <For each={renderedUserMessages()}>
                 {(message) => (
                   <SessionTurn
@@ -479,7 +238,6 @@ export function SessionPane(props: SessionPaneProps) {
                     lastUserMessageID={sessionMessages.lastUserMessage()?.id}
                     stepsExpanded={store.stepsExpanded[message.id] ?? false}
                     onStepsExpandedToggle={() => setStore("stepsExpanded", message.id, (x) => !x)}
-                    onUserInteracted={() => setStore("userInteracted", true)}
                     actions={{
                       onEdit: messageActions.editMessage,
                       onRestore: messageActions.restoreCheckpoint,
@@ -600,7 +358,6 @@ export function SessionPane(props: SessionPaneProps) {
           visibleUserMessages={sessionMessages.visibleUserMessages}
           lastUserMessage={sessionMessages.lastUserMessage}
           working={working}
-          onUserInteracted={() => setStore("userInteracted", true)}
           messageActions={{
             onEdit: messageActions.editMessage,
             onRestore: messageActions.restoreCheckpoint,
