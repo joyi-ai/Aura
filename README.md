@@ -2,6 +2,8 @@
 
 A fork of OpenCode with significant UI/UX changes focused on the desktop app.
 
+<video src="assets/demo.mp4" controls width="100%"></video>
+
 ## Key Differences
 
 ### Added
