@@ -16,6 +16,7 @@ import {
   type LspStatus,
   type VcsInfo,
   type PermissionRequest,
+  type QuestionRequest,
   createOpencodeClient,
 } from "@opencode-ai/sdk/v2/client"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -41,11 +42,13 @@ export type AskUserQuestionRequest = {
   sessionID: string
   messageID: string
   callID: string
+  source?: "askuser" | "question"
   questions: Array<{
     question: string
     header: string
     options: Array<{ label: string; description: string }>
     multiSelect: boolean
+    allowOther?: boolean
   }>
 }
 
@@ -364,6 +367,59 @@ function createGlobalSync() {
     }
 
     const [store, setStore] = child(directory)
+    const upsertAskUserRequest = (request: AskUserQuestionRequest) => {
+      const sessionID = request.sessionID
+      const existing = store.askuser[sessionID]
+      const next = {
+        ...request,
+        source: request.source ?? "askuser",
+      }
+      if (!existing) {
+        setStore("askuser", sessionID, [next])
+        return
+      }
+      const result = Binary.search(existing, next.id, (q) => q.id)
+      if (result.found) {
+        setStore("askuser", sessionID, result.index, reconcile(next))
+        return
+      }
+      setStore(
+        "askuser",
+        sessionID,
+        produce((draft) => {
+          draft.splice(result.index, 0, next)
+        }),
+      )
+    }
+    const removeAskUserRequest = (sessionID: string, requestID: string) => {
+      const questions = store.askuser[sessionID]
+      if (!questions) return
+      const result = Binary.search(questions, requestID, (q) => q.id)
+      if (!result.found) return
+      setStore(
+        "askuser",
+        sessionID,
+        produce((draft) => {
+          draft.splice(result.index, 1)
+        }),
+      )
+    }
+    const mapQuestionRequest = (request: QuestionRequest): AskUserQuestionRequest => {
+      return {
+        id: request.id,
+        sessionID: request.sessionID,
+        messageID: request.tool?.messageID ?? "",
+        callID: request.tool?.callID ?? request.id,
+        source: "question",
+        questions: request.questions.map((question) => ({
+          question: question.question,
+          header: question.header,
+          options: question.options,
+          multiSelect: question.multiple ?? false,
+          allowOther: question.allowOther,
+        })),
+      }
+    }
     switch (event.type) {
       case "server.instance.disposed": {
         bootstrapInstance(directory)
@@ -565,39 +621,10 @@ function createGlobalSync() {
     }
     if (eventType === "askuser.asked") {
       const props = (event as unknown as { properties: AskUserQuestionRequest }).properties
-      const sessionID = props.sessionID
-      const questions = store.askuser[sessionID]
-      if (!questions) {
-        setStore("askuser", sessionID, [props])
-        return
-      }
-
-      const result = Binary.search(questions, props.id, (q) => q.id)
-      if (result.found) {
-        setStore("askuser", sessionID, result.index, reconcile(props))
-        return
-      }
-
-      setStore(
-        "askuser",
-        sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 0, props)
-        }),
-      )
+      upsertAskUserRequest({ ...props, source: "askuser" })
     } else if (eventType === "askuser.replied") {
       const props = (event as unknown as { properties: { sessionID: string; requestID: string } }).properties
-      const questions = store.askuser[props.sessionID]
-      if (!questions) return
-      const result = Binary.search(questions, props.requestID, (q) => q.id)
-      if (!result.found) return
-      setStore(
-        "askuser",
-        props.sessionID,
-        produce((draft) => {
-          draft.splice(result.index, 1)
-        }),
-      )
+      removeAskUserRequest(props.sessionID, props.requestID)
     } else if (eventType === "planmode.review") {
       const props = (event as unknown as { properties: PlanModeRequest }).properties
       const sessionID = props.sessionID
@@ -638,6 +665,12 @@ function createGlobalSync() {
           return
         }
       }
+    } else if (eventType === "question.asked") {
+      const props = (event as unknown as { properties: QuestionRequest }).properties
+      upsertAskUserRequest(mapQuestionRequest(props))
+    } else if (eventType === "question.replied" || eventType === "question.rejected") {
+      const props = (event as unknown as { properties: { sessionID: string; requestID: string } }).properties
+      removeAskUserRequest(props.sessionID, props.requestID)
     }
   })
   onCleanup(unsub)

@@ -115,6 +115,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
 
     // Build answers object - map question text to selected labels + custom input
     const answers: Record<string, string> = {}
+    const answerSets: string[][] = []
     questions().forEach((q, i) => {
       const selected = selections()[i] ?? []
       const hasOther = otherSelected()[i] ?? false
@@ -126,12 +127,16 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
       }
 
       answers[q.question] = parts.join(", ")
+      answerSets.push(parts)
     })
 
     try {
       await data.respondToAskUser({
         requestID: request.id,
+        sessionID: props.sessionID,
         answers,
+        answerSets,
+        source: request.source,
       })
     } finally {
       setIsSubmitting(false)

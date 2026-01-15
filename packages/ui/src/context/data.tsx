@@ -5,6 +5,7 @@ import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 type AskUserRequest = {
   id: string
   callID: string
+  source?: "askuser" | "question"
 }
 
 type PlanModeRequest = {
@@ -51,7 +52,13 @@ export type PermissionRespondFn = (input: {
 
 export type NavigateToSessionFn = (sessionID: string) => void
 
-export type AskUserRespondFn = (input: { requestID: string; answers: Record<string, string> }) => Promise<unknown>
+export type AskUserRespondFn = (input: {
+  requestID: string
+  answers: Record<string, string>
+  answerSets?: string[][]
+  sessionID?: string
+  source?: "askuser" | "question"
+}) => Promise<unknown>
 
 export type PlanModeRespondFn = (input: { requestID: string; approved: boolean }) => Promise<unknown>
 

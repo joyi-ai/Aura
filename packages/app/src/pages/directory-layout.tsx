@@ -36,7 +36,57 @@ export default function Layout(props: ParentProps) {
               response: "once" | "always" | "reject"
             }) => sdk.client.permission.respond(input)
 
-            const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
+            const findAskUserRequest = (requestID: string, sessionID?: string) => {
+              const store = sync.data.askuser ?? {}
+              if (sessionID && store[sessionID]) {
+                return store[sessionID].find((req) => req.id === requestID)
+              }
+              for (const requests of Object.values(store)) {
+                const match = requests.find((req) => req.id === requestID)
+                if (match) return match
+              }
+              return undefined
+            }
+
+            const buildQuestionAnswers = (
+              input: { answers: Record<string, string>; answerSets?: string[][] },
+              request: { questions?: Array<{ question: string }> } | undefined,
+            ) => {
+              if (input.answerSets) return input.answerSets
+              if (!request?.questions) return []
+              return request.questions.map((question) => {
+                const value = input.answers[question.question] ?? ""
+                return value
+                  .split(",")
+                  .map((entry) => entry.trim())
+                  .filter(Boolean)
+              })
+            }
+
+            const respondToAskUser = async (input: {
+              requestID: string
+              answers: Record<string, string>
+              answerSets?: string[][]
+              sessionID?: string
+              source?: "askuser" | "question"
+            }) => {
+              const request = findAskUserRequest(input.requestID, input.sessionID) as
+                | { source?: "askuser" | "question"; questions?: Array<{ question: string }> }
+                | undefined
+              const source = input.source ?? request?.source ?? "askuser"
+
+              if (source === "question") {
+                const response = await fetch(`${globalSDK.url}/question/${input.requestID}/reply`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-opencode-directory": directory(),
+                  },
+                  body: JSON.stringify({ answers: buildQuestionAnswers(input, request) }),
+                })
+                return response.json()
+              }
+
               const response = await fetch(`${globalSDK.url}/askuser/${input.requestID}/reply`, {
                 method: "POST",
                 headers: {

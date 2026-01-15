@@ -1076,6 +1076,13 @@ ToolRegistry.register({
 })
 
 ToolRegistry.register({
+  name: "question",
+  render(props) {
+    return <AskUserQuestion {...props} />
+  },
+})
+
+ToolRegistry.register({
   name: "exitplanmode",
   render(props) {
     return <PlanReview {...props} />

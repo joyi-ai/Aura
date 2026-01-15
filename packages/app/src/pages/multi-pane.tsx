@@ -33,6 +33,75 @@ type MultiPanePageProps = {
   initialSession?: string
 }
 
+type AskUserReplyInput = {
+  requestID: string
+  answers: Record<string, string>
+  answerSets?: string[][]
+  sessionID?: string
+  source?: "askuser" | "question"
+}
+
+type AskUserRequestEntry = {
+  id: string
+  source?: "askuser" | "question"
+  questions?: Array<{ question: string }>
+}
+
+type SyncContext = ReturnType<typeof useSync>
+
+const findAskUserRequest = (sync: SyncContext, requestID: string, sessionID?: string) => {
+  const store = sync.data.askuser ?? {}
+  if (sessionID && store[sessionID]) {
+    return store[sessionID].find((req) => req.id === requestID)
+  }
+  for (const requests of Object.values(store)) {
+    const match = requests.find((req) => req.id === requestID)
+    if (match) return match
+  }
+  return undefined
+}
+
+const buildQuestionAnswers = (input: AskUserReplyInput, request: AskUserRequestEntry | undefined) => {
+  if (input.answerSets) return input.answerSets
+  if (!request?.questions) return []
+  return request.questions.map((question) => {
+    const value = input.answers[question.question] ?? ""
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  })
+}
+
+const createAskUserResponder = (sync: SyncContext, baseUrl: string, directory: string) => {
+  return async (input: AskUserReplyInput) => {
+    const request = findAskUserRequest(sync, input.requestID, input.sessionID) as AskUserRequestEntry | undefined
+    const source = input.source ?? request?.source ?? "askuser"
+
+    if (source === "question") {
+      const response = await fetch(`${baseUrl}/question/${input.requestID}/reply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-opencode-directory": directory,
+        },
+        body: JSON.stringify({ answers: buildQuestionAnswers(input, request) }),
+      })
+      return response.json()
+    }
+
+    const response = await fetch(`${baseUrl}/askuser/${input.requestID}/reply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-opencode-directory": directory,
+      },
+      body: JSON.stringify({ answers: input.answers }),
+    })
+    return response.json()
+  }
+}
+
 // Bridge component to connect LocalProvider's agent setter to DataProvider
 function AgentBridge(props: { setAgentRef: (fn: (name: string) => void) => void; children: any }) {
   const local = useLocal()
@@ -50,17 +119,7 @@ function PaneSyncedProviders(props: { paneId: string; directory: string; childre
     response: "once" | "always" | "reject"
   }) => sdk.client.permission.respond(input)
 
-  const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
-    const response = await fetch(`${sdk.url}/askuser/${input.requestID}/reply`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-opencode-directory": props.directory,
-      },
-      body: JSON.stringify({ answers: input.answers }),
-    })
-    return response.json()
-  }
+  const respondToAskUser = createAskUserResponder(sync, sdk.url, props.directory)
 
   const respondToPlanMode = async (input: { requestID: string; approved: boolean }) => {
     const response = await fetch(`${sdk.url}/planmode/${input.requestID}/reply`, {
@@ -110,17 +169,7 @@ function GlobalPromptSynced(props: { paneId: string; directory: string; sessionI
     response: "once" | "always" | "reject"
   }) => sdk.client.permission.respond(input)
 
-  const respondToAskUser = async (input: { requestID: string; answers: Record<string, string> }) => {
-    const response = await fetch(`${sdk.url}/askuser/${input.requestID}/reply`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-opencode-directory": props.directory,
-      },
-      body: JSON.stringify({ answers: input.answers }),
-    })
-    return response.json()
-  }
+  const respondToAskUser = createAskUserResponder(sync, sdk.url, props.directory)
 
   const respondToPlanMode = async (input: { requestID: string; approved: boolean }) => {
     const response = await fetch(`${sdk.url}/planmode/${input.requestID}/reply`, {
