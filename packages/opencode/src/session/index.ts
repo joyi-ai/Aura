@@ -17,8 +17,6 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
-import { Worktree } from "@/worktree"
-import { Cache } from "@/cache"
 import { StorageSqlite } from "@/storage/sqlite"
 import { Global } from "@/global"
 
@@ -32,7 +30,7 @@ export namespace Session {
   /**
    * Convert a cache row to Session.Info
    */
-  type SessionRow = Cache.SessionRow | StorageSqlite.SessionIndexRow
+  type SessionRow = StorageSqlite.SessionIndexRow
 
   export function fromCacheRow(row: SessionRow | null): Session.Info | null {
     if (!row) return null
@@ -43,8 +41,6 @@ export namespace Session {
           model?: Session.Model
           variant?: string | null
           thinking?: boolean
-          worktreeRequested?: boolean
-          worktreeCleanup?: Worktree.CleanupMode
         })
       : undefined
     return {
@@ -68,12 +64,6 @@ export namespace Session {
             }
           : undefined,
       share: row.share_url ? { url: row.share_url } : undefined,
-      worktree:
-        row.worktree_path && row.worktree_branch
-          ? { path: row.worktree_path, branch: row.worktree_branch, cleanup: "ask" as const }
-          : undefined,
-      worktreeRequested: data?.worktreeRequested,
-      worktreeCleanup: data?.worktreeCleanup,
       mode: data?.mode,
       agent: data?.agent,
       model: data?.model,
@@ -93,28 +83,6 @@ export namespace Session {
     return new RegExp(
       `^(${parentTitlePrefix}|${childTitlePrefix})\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$`,
     ).test(title)
-  }
-
-  function cacheData(session: Info) {
-    const data = {
-      ...(session.mode ? { mode: session.mode } : {}),
-      ...(session.agent ? { agent: session.agent } : {}),
-      ...(session.model ? { model: session.model } : {}),
-      ...(session.variant !== undefined ? { variant: session.variant } : {}),
-      ...(session.thinking !== undefined ? { thinking: session.thinking } : {}),
-      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
-      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
-    }
-    const has =
-      data.mode !== undefined ||
-      data.agent !== undefined ||
-      data.model !== undefined ||
-      data.variant !== undefined ||
-      data.thinking !== undefined ||
-      data.worktreeRequested !== undefined ||
-      data.worktreeCleanup !== undefined
-    if (!has) return undefined
-    return data
   }
 
   export const Model = z.object({
@@ -164,9 +132,6 @@ export namespace Session {
       model: Model.optional(),
       variant: z.string().nullable().optional(),
       thinking: z.boolean().optional(),
-      worktree: Worktree.Info.optional(),
-      worktreeRequested: z.boolean().optional(),
-      worktreeCleanup: Worktree.CleanupMode.optional(),
     })
     .meta({
       ref: "Session",
@@ -224,8 +189,6 @@ export namespace Session {
         parentID: Identifier.schema("session").optional(),
         title: z.string().optional(),
         permission: Info.shape.permission,
-        useWorktree: z.boolean().optional(),
-        worktreeCleanup: Worktree.CleanupMode.optional(),
         mode: SessionMode.Info.optional(),
         agent: Info.shape.agent,
         model: Model.optional(),
@@ -239,8 +202,6 @@ export namespace Session {
         directory: Instance.directory,
         title: input?.title,
         permission: input?.permission,
-        useWorktree: input?.useWorktree,
-        worktreeCleanup: input?.worktreeCleanup,
         mode: input?.mode,
         agent: input?.agent,
         model: input?.model,
@@ -254,15 +215,11 @@ export namespace Session {
     z.object({
       sessionID: Identifier.schema("session"),
       messageID: Identifier.schema("message").optional(),
-      useWorktree: z.boolean().optional(),
-      worktreeCleanup: Worktree.CleanupMode.optional(),
     }),
     async (input) => {
       const parent = await get(input.sessionID)
       const session = await createNext({
         directory: Instance.directory,
-        useWorktree: input.useWorktree,
-        worktreeCleanup: input.worktreeCleanup,
         mode: parent.mode,
         agent: parent.agent,
         model: parent.model,
@@ -310,8 +267,6 @@ export namespace Session {
     parentID?: string
     directory: string
     permission?: PermissionNext.Ruleset
-    useWorktree?: boolean
-    worktreeCleanup?: Worktree.CleanupMode
     mode?: SessionMode.Info
     agent?: string
     model?: Model
@@ -320,8 +275,6 @@ export namespace Session {
   }) {
     const sessionId = Identifier.descending("session", input.id)
     const mode = SessionMode.normalize(input.mode)
-    const worktreeRequested = input.useWorktree === true && Instance.project.vcs === "git"
-    const worktreeCleanup = worktreeRequested ? input.worktreeCleanup : undefined
 
     const result: Info = {
       id: sessionId,
@@ -336,9 +289,6 @@ export namespace Session {
       model: input.model,
       variant: input.variant,
       thinking: input.thinking,
-      worktree: undefined,
-      worktreeRequested: worktreeRequested ? true : undefined,
-      worktreeCleanup,
       time: {
         created: Date.now(),
         updated: Date.now(),
@@ -347,23 +297,6 @@ export namespace Session {
     log.info("created", result)
     await Storage.write(["session", Instance.project.id, result.id], result)
     SessionMode.set(result.id, result.mode)
-
-    // Update cache
-    Cache.Session.upsert({
-      id: result.id,
-      projectID: result.projectID,
-      parentID: result.parentID,
-      title: result.title,
-      directory: result.directory,
-      version: result.version,
-      time: {
-        created: result.time.created,
-        updated: result.time.updated,
-        archived: result.time.archived,
-      },
-      worktree: result.worktree,
-      data: cacheData(result),
-    })
 
     Bus.publish(Event.Created, {
       info: result,
@@ -428,30 +361,6 @@ export namespace Session {
       // Use Session.touch() to explicitly update the timestamp (e.g., when a message is sent)
     })
 
-    // Update cache
-    Cache.Session.upsert({
-      id: result.id,
-      projectID: result.projectID,
-      parentID: result.parentID,
-      title: result.title,
-      directory: result.directory,
-      version: result.version,
-      time: {
-        created: result.time.created,
-        updated: result.time.updated,
-        archived: result.time.archived,
-      },
-      summary: result.summary
-        ? {
-            additions: result.summary.additions,
-            deletions: result.summary.deletions,
-            files: result.summary.files,
-          }
-        : undefined,
-      share: result.share,
-      worktree: result.worktree,
-      data: cacheData(result),
-    })
     SessionMode.set(result.id, result.mode)
 
     Bus.publish(Event.Updated, {
@@ -583,34 +492,11 @@ export namespace Session {
         }
         await collectSessions(input.sessionID)
 
-        // Handle worktree cleanup for all sessions
-        for (const s of allSessions) {
-          if (s.worktree) {
-            const shouldRemove = input.removeWorktree ?? s.worktree.cleanup === "always"
-            if (shouldRemove) {
-              try {
-                await Worktree.remove({
-                  path: s.worktree.path,
-                  branch: s.worktree.branch,
-                  deleteBranch: true,
-                })
-                log.info("removed worktree", { path: s.worktree.path, branch: s.worktree.branch })
-              } catch (err) {
-                log.warn("failed to remove worktree", { path: s.worktree.path, error: err })
-              }
-            } else {
-              log.info("keeping worktree", { path: s.worktree.path })
-            }
-          }
-        }
-
         // Unshare all sessions
         for (const sid of allSessionIDs) {
           await unshare(sid).catch(() => {})
         }
 
-        // Delete from cache transactionally (ACID)
-        Cache.Session.removeMany(allSessionIDs)
         for (const sid of allSessionIDs) {
           SessionMode.clear(sid)
         }

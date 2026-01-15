@@ -25,8 +25,6 @@ export namespace StorageSqlite {
     deletions: number
     files_changed: number
     share_url: string | null
-    worktree_path: string | null
-    worktree_branch: string | null
     data: string | null
   }
 
@@ -38,14 +36,11 @@ export namespace StorageSqlite {
     version?: string
     summary?: { additions?: number; deletions?: number; files?: number }
     share?: { url?: string }
-    worktree?: { path?: string; branch?: string }
     mode?: unknown
     agent?: string
     model?: unknown
     variant?: string | null
     thinking?: boolean
-    worktreeRequested?: boolean
-    worktreeCleanup?: unknown
     time?: { created?: number; updated?: number; archived?: number }
   }
 
@@ -115,8 +110,6 @@ export namespace StorageSqlite {
       deletions INTEGER DEFAULT 0,
       files_changed INTEGER DEFAULT 0,
       share_url TEXT,
-      worktree_path TEXT,
-      worktree_branch TEXT,
       data TEXT
     );
 
@@ -185,17 +178,13 @@ export namespace StorageSqlite {
       ...(session.model ? { model: session.model } : {}),
       ...(session.variant !== undefined ? { variant: session.variant } : {}),
       ...(session.thinking !== undefined ? { thinking: session.thinking } : {}),
-      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
-      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
     }
     const has =
       data.mode !== undefined ||
       data.agent !== undefined ||
       data.model !== undefined ||
       data.variant !== undefined ||
-      data.thinking !== undefined ||
-      data.worktreeRequested !== undefined ||
-      data.worktreeCleanup !== undefined
+      data.thinking !== undefined
     if (!has) return
     return data
   }
@@ -207,7 +196,6 @@ export namespace StorageSqlite {
     if (!directory) return
     const summary = session.summary
     const share = session.share
-    const worktree = session.worktree
     const data = sessionIndexData(session)
     const version = typeof session.version === "string" ? session.version : null
     const createdAt = session.time?.created ?? null
@@ -226,8 +214,6 @@ export namespace StorageSqlite {
       deletions: summary?.deletions ?? 0,
       files_changed: summary?.files ?? 0,
       share_url: share?.url ?? null,
-      worktree_path: worktree?.path ?? null,
-      worktree_branch: worktree?.branch ?? null,
       data: data ? JSON.stringify(data) : null,
     }
     return row
@@ -241,24 +227,22 @@ export namespace StorageSqlite {
        (id, projectID, parentID, title, directory, version,
         created_at, updated_at, archived_at,
         additions, deletions, files_changed,
-        share_url, worktree_path, worktree_branch, data)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        share_url, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-        projectID = excluded.projectID,
-        parentID = excluded.parentID,
-        title = excluded.title,
-        directory = excluded.directory,
-        version = excluded.version,
-        created_at = excluded.created_at,
-        updated_at = excluded.updated_at,
-        archived_at = excluded.archived_at,
-        additions = excluded.additions,
-        deletions = excluded.deletions,
-        files_changed = excluded.files_changed,
-        share_url = excluded.share_url,
-        worktree_path = excluded.worktree_path,
-        worktree_branch = excluded.worktree_branch,
-        data = excluded.data`,
+         projectID = excluded.projectID,
+         parentID = excluded.parentID,
+         title = excluded.title,
+         directory = excluded.directory,
+         version = excluded.version,
+         created_at = excluded.created_at,
+         updated_at = excluded.updated_at,
+         archived_at = excluded.archived_at,
+         additions = excluded.additions,
+         deletions = excluded.deletions,
+         files_changed = excluded.files_changed,
+         share_url = excluded.share_url,
+         data = excluded.data`,
       [
         row.id,
         row.projectID,
@@ -273,8 +257,6 @@ export namespace StorageSqlite {
         row.deletions,
         row.files_changed,
         row.share_url,
-        row.worktree_path,
-        row.worktree_branch,
         row.data,
       ],
     )

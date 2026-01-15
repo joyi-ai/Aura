@@ -79,13 +79,21 @@ export namespace Project {
           if (id) Bun.file(path.join(git, "opencode")).write(id)
         }
 
-        if (!id)
-          return {
-            id: "global",
-            worktree: sandbox,
-            sandbox: sandbox,
-            vcs: "git",
+        if (!id) {
+          // For managed worktrees, extract project ID from path structure
+          // Managed worktrees are stored at: {dataDir}/worktree/{projectID}/{name}
+          const managedProjectID = extractManagedWorktreeProjectID(directory)
+          if (managedProjectID) {
+            id = managedProjectID
+          } else {
+            return {
+              id: "global",
+              worktree: sandbox,
+              sandbox: sandbox,
+              vcs: "git",
+            }
           }
+        }
 
         sandbox = await $`git rev-parse --show-toplevel`
           .quiet()
@@ -315,5 +323,35 @@ export namespace Project {
     const project = await Storage.read<Info>(["project", projectID]).catch(() => undefined)
     if (!project) return []
     return resolveSandboxes(project)
+  }
+
+  /**
+   * Extract project ID from a managed worktree path.
+   * Managed worktrees are stored at: {dataDir}/worktree/{projectID}/{name}
+   */
+  function extractManagedWorktreeProjectID(worktreePath: string): string | undefined {
+    // Normalize path separators to forward slashes for consistent matching
+    const normalized = worktreePath.replace(/\\/g, "/")
+
+    // Look for the pattern: opencode/worktree/{projectID}/{name}
+    // The projectID is a 40-char hex string (git commit hash)
+    const match = normalized.match(/opencode\/worktree\/([a-f0-9]{40})\/[^/]+\/?$/)
+    if (match) return match[1]
+
+    // Fallback: try matching against Global.Path.data
+    const managedRoot = path.normalize(path.join(Global.Path.data, "worktree")).replace(/\\/g, "/")
+    const normalizedPath = path.normalize(worktreePath).replace(/\\/g, "/")
+
+    // Case-insensitive comparison for Windows
+    const isWindows = process.platform === "win32"
+    const pathLower = isWindows ? normalizedPath.toLowerCase() : normalizedPath
+    const rootLower = isWindows ? managedRoot.toLowerCase() : managedRoot
+
+    if (!pathLower.startsWith(rootLower)) return undefined
+
+    const relative = normalizedPath.slice(managedRoot.length)
+    const parts = relative.split("/").filter(Boolean)
+    if (parts.length < 2) return undefined
+    return parts[0]
   }
 }

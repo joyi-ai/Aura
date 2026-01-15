@@ -57,8 +57,6 @@ import { PlanMode } from "@/session/plan-mode"
 import { Skill } from "@/skill/skill"
 import { Installation } from "@/installation"
 import { MDNS } from "./mdns"
-import { Cache } from "@/cache"
-import { Worktree } from "../worktree"
 import { QuestionRoute } from "./question"
 import { ThemeRoute } from "./theme"
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
@@ -200,32 +198,10 @@ export namespace Server {
     return { push, flush, stop }
   }
 
-  function sessionCacheData(session: Session.Info) {
-    const data = {
-      ...(session.mode ? { mode: session.mode } : {}),
-      ...(session.agent ? { agent: session.agent } : {}),
-      ...(session.model ? { model: session.model } : {}),
-      ...(session.variant !== undefined ? { variant: session.variant } : {}),
-      ...(session.thinking !== undefined ? { thinking: session.thinking } : {}),
-      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
-      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
-    }
-    const has =
-      data.mode !== undefined ||
-      data.agent !== undefined ||
-      data.model !== undefined ||
-      data.variant !== undefined ||
-      data.thinking !== undefined ||
-      data.worktreeRequested !== undefined ||
-      data.worktreeCleanup !== undefined
-    if (!has) return undefined
-    return data
-  }
-
   /**
    * Convert cache row to Session.Info format
    */
-  type SessionRow = Cache.SessionRow | StorageSqlite.SessionIndexRecord
+  type SessionRow = StorageSqlite.SessionIndexRecord
 
   function cacheRowToSessionInfo(row: SessionRow | null): Session.Info | null {
     if (!row) return null
@@ -236,8 +212,6 @@ export namespace Server {
           model?: Session.Model
           variant?: string | null
           thinking?: boolean
-          worktreeRequested?: boolean
-          worktreeCleanup?: Worktree.CleanupMode
         })
       : undefined
     return {
@@ -261,12 +235,6 @@ export namespace Server {
             }
           : undefined,
       share: row.share_url ? { url: row.share_url } : undefined,
-      worktree:
-        row.worktree_path && row.worktree_branch
-          ? { path: row.worktree_path, branch: row.worktree_branch, cleanup: "ask" as const }
-          : undefined,
-      worktreeRequested: data?.worktreeRequested,
-      worktreeCleanup: data?.worktreeCleanup,
       mode: data?.mode,
       agent: data?.agent,
       model: data?.model,
@@ -484,36 +452,6 @@ export namespace Server {
                 properties: {},
               },
             })
-            return c.json(true)
-          },
-        )
-        .delete(
-          "/global/worktree",
-          describeRoute({
-            summary: "Delete managed worktree",
-            description: "Delete a managed git worktree by its path. Does not require project context.",
-            operationId: "global.worktree.delete",
-            responses: {
-              200: {
-                description: "Worktree deleted",
-                content: {
-                  "application/json": {
-                    schema: resolver(z.boolean()),
-                  },
-                },
-              },
-              ...errors(400, 404),
-            },
-          }),
-          validator(
-            "query",
-            z.object({
-              directory: z.string(),
-            }),
-          ),
-          async (c) => {
-            const { directory } = c.req.valid("query")
-            await Worktree.removeManaged(directory)
             return c.json(true)
           },
         )
@@ -921,7 +859,6 @@ export namespace Server {
                           home: z.string(),
                           state: z.string(),
                           config: z.string(),
-                          worktree: z.string(),
                           directory: z.string(),
                         })
                         .meta({
@@ -938,56 +875,8 @@ export namespace Server {
               home: Global.Path.home,
               state: Global.Path.state,
               config: Global.Path.config,
-              worktree: Instance.worktree,
               directory: Instance.directory,
             })
-          },
-        )
-        .post(
-          "/experimental/worktree",
-          describeRoute({
-            summary: "Create worktree",
-            description: "Create a new git worktree for the current project.",
-            operationId: "worktree.create",
-            responses: {
-              200: {
-                description: "Worktree created",
-                content: {
-                  "application/json": {
-                    schema: resolver(Worktree.ManagedInfo),
-                  },
-                },
-              },
-              ...errors(400),
-            },
-          }),
-          validator("json", Worktree.createManaged.schema),
-          async (c) => {
-            const body = c.req.valid("json")
-            const worktree = await Worktree.createManaged(body)
-            return c.json(worktree)
-          },
-        )
-        .get(
-          "/experimental/worktree",
-          describeRoute({
-            summary: "List worktrees",
-            description: "List all sandbox worktrees for the current project.",
-            operationId: "worktree.list",
-            responses: {
-              200: {
-                description: "List of worktree directories",
-                content: {
-                  "application/json": {
-                    schema: resolver(z.array(z.string())),
-                  },
-                },
-              },
-            },
-          }),
-          async (c) => {
-            const sandboxes = await Project.sandboxes(Instance.project.id)
-            return c.json(sandboxes)
           },
         )
         .get(
@@ -1202,31 +1091,6 @@ export namespace Server {
             const sessionID = c.req.valid("param").sessionID
             log.info("SEARCH", { url: c.req.url })
             const session = await Session.get(sessionID)
-
-            // Update cache with complete session data
-            Cache.Session.upsert({
-              id: session.id,
-              projectID: session.projectID,
-              parentID: session.parentID,
-              title: session.title,
-              directory: session.directory,
-              version: session.version,
-              time: {
-                created: session.time.created,
-                updated: session.time.updated,
-                archived: session.time.archived,
-              },
-              summary: session.summary
-                ? {
-                    additions: session.summary.additions,
-                    deletions: session.summary.deletions,
-                    files: session.summary.files,
-                  }
-                : undefined,
-              share: session.share,
-              worktree: session.worktree,
-              data: sessionCacheData(session),
-            })
 
             return c.json(session)
           },
@@ -2116,94 +1980,6 @@ export namespace Server {
             const sessionID = c.req.valid("param").sessionID
             const session = await SessionRevert.unrevert({ sessionID })
             return c.json(session)
-          },
-        )
-        .get(
-          "/session/:sessionID/worktree",
-          describeRoute({
-            summary: "Get worktree status",
-            description: "Get the worktree status for a session.",
-            operationId: "session.worktree.get",
-            responses: {
-              200: {
-                description: "Worktree status",
-                content: {
-                  "application/json": {
-                    schema: resolver(
-                      z.object({
-                        exists: z.boolean(),
-                        path: z.string().optional(),
-                        cleanup: z.enum(["ask", "always", "never"]).optional(),
-                      }),
-                    ),
-                  },
-                },
-              },
-              ...errors(400, 404),
-            },
-          }),
-          validator(
-            "param",
-            z.object({
-              sessionID: Identifier.schema("session"),
-            }),
-          ),
-          async (c) => {
-            const { sessionID } = c.req.valid("param")
-            const session = await Session.get(sessionID)
-            if (!session.worktree) {
-              return c.json({ exists: false })
-            }
-            const { Worktree } = await import("@/worktree")
-            const exists = await Worktree.exists(session.worktree.path)
-            return c.json({
-              exists,
-              path: session.worktree.path,
-              cleanup: session.worktree.cleanup,
-            })
-          },
-        )
-        .delete(
-          "/session/:sessionID/worktree",
-          describeRoute({
-            summary: "Remove worktree",
-            description: "Manually remove the worktree associated with a session.",
-            operationId: "session.worktree.delete",
-            responses: {
-              200: {
-                description: "Worktree removed",
-                content: {
-                  "application/json": {
-                    schema: resolver(z.boolean()),
-                  },
-                },
-              },
-              ...errors(400, 404),
-            },
-          }),
-          validator(
-            "param",
-            z.object({
-              sessionID: Identifier.schema("session"),
-            }),
-          ),
-          async (c) => {
-            const { sessionID } = c.req.valid("param")
-            const session = await Session.get(sessionID)
-            if (!session.worktree) {
-              return c.json(false)
-            }
-            const { Worktree } = await import("@/worktree")
-            await Worktree.remove({
-              path: session.worktree.path,
-              branch: session.worktree.branch,
-              deleteBranch: true,
-            })
-            // Update session to remove worktree info
-            await Session.update(sessionID, (draft) => {
-              draft.worktree = undefined
-            })
-            return c.json(true)
           },
         )
         .post(

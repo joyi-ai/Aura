@@ -758,98 +758,20 @@ export function SessionTurn(
 
   const reasoning = createMemo(() => {
     const texts: string[] = []
-
     for (const msg of assistantMessages()) {
       const msgParts = data.store.part[msg.id] ?? emptyParts
-
       for (const part of msgParts) {
         if (!part) continue
-
         if (part.type !== "reasoning") continue
-
         const text = (part as ReasoningPart).text ?? ""
-
         if (!text.trim()) continue
-
         texts.push(text)
       }
     }
-
     if (texts.length === 0) return
-
-    const full = texts.join("\n").replace(/\r\n/g, "\n")
-
-    const scan = full.trimStart()
-
-    if (!scan.trim()) return
-
-    const maxChars = 900
-
-    const maxLines = 10
-
-    const lineWidth = Math.max(1, Math.floor(maxChars / maxLines))
-
-    const result = scan.split("").reduce(
-      (state, ch, index) => {
-        if (ch === "\n") {
-          if (state.count === 0 && state.wrapped) {
-            state.wrapped = false
-
-            return state
-          }
-
-          state.ends.push(index + 1)
-
-          state.count = 0
-
-          state.wrapped = false
-
-          return state
-        }
-
-        const next = state.count + 1
-
-        if (next < lineWidth) {
-          state.count = next
-
-          state.wrapped = false
-
-          return state
-        }
-
-        state.ends.push(index + 1)
-
-        state.count = 0
-
-        state.wrapped = true
-
-        return state
-      },
-
-      { ends: [] as number[], count: 0, wrapped: false },
-    )
-
-    const active = data.store.session_status[props.sessionID] ?? idle
-
-    const showPartial = active.type === "idle" || !isLastUserMessage()
-
-    const lineEnds = showPartial && result.count > 0 ? result.ends.concat(scan.length) : result.ends
-
-    if (lineEnds.length === 0) return
-
-    const overflow = lineEnds.length - maxLines
-
-    const start = overflow > 0 ? (lineEnds[overflow - 1] ?? 0) : 0
-
-    const end = lineEnds[lineEnds.length - 1] ?? 0
-
-    const tail = scan.slice(start, end).trim()
-
-    if (!tail) return
-
-    if (start > 0) return `…${tail.trimStart()}`
-
-    return tail
+    const full = texts.join("\n").replace(/\r\n/g, "\n").trim()
+    if (!full) return
+    return full
   })
 
   const reasoningMissing = createMemo(() => hasReasoning() && !reasoning())
@@ -871,6 +793,14 @@ export function SessionTurn(
     if (!store.reasoningLoading) return
     setStore("reasoningLoading", false)
   })
+
+  createEffect(
+    on(reasoning, () => {
+      const el = store.reasoningRef
+      if (!el) return
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    }),
+  )
 
   const commentary = createMemo(() => {
     if (stepsToolParts().length === 0) return
@@ -1078,6 +1008,7 @@ export function SessionTurn(
 
   const [store, setStore] = createStore({
     stickyTriggerRef: undefined as HTMLDivElement | undefined,
+    reasoningRef: undefined as HTMLDivElement | undefined,
 
     stickyHeaderHeight: 0,
 
@@ -1331,7 +1262,14 @@ export function SessionTurn(
                                       </div>
                                     }
                                   >
-                                    {(text) => <div data-slot="session-turn-reasoning">{text()}</div>}
+                                    {(text) => (
+                                      <div
+                                        ref={(el) => setStore("reasoningRef", el)}
+                                        data-slot="session-turn-reasoning"
+                                      >
+                                        {text()}
+                                      </div>
+                                    )}
                                   </Show>
                                 </Show>
                               </div>

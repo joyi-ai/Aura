@@ -50,7 +50,6 @@ import { ClaudeAgent } from "@/provider/claude-agent"
 import { ClaudePlugin } from "@/claude-plugin"
 import { CodexProcessor } from "./codex-processor"
 import { SessionMode } from "./mode"
-import { Worktree } from "@/worktree"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -170,58 +169,6 @@ export namespace SessionPrompt {
     })
   }
 
-  async function ensureWorktree(session: Session.Info) {
-    if (session.worktree?.path) return session
-    if (session.worktreeRequested !== true) return session
-    if (Instance.project.vcs !== "git") return session
-
-    const info = await Worktree.create({
-      sessionID: session.id,
-      cleanup: session.worktreeCleanup,
-    })
-
-    return Session.update(session.id, (draft) => {
-      draft.worktree = info
-      draft.directory = info.path
-    })
-  }
-
-  function isWithin(root: string, file: string) {
-    const rel = path.relative(root, file)
-    if (!rel) return true
-    if (rel.startsWith("..")) return false
-    if (path.isAbsolute(rel)) return false
-    return true
-  }
-
-  function remapFileUrl(url: string) {
-    if (!url.startsWith("file:")) return url
-    if (Instance.project.vcs !== "git") return url
-    if (Instance.project.worktree === Instance.directory) return url
-
-    const base = new URL(url)
-    const file = fileURLToPath(base)
-    if (isWithin(Instance.directory, file)) return url
-    if (!isWithin(Instance.project.worktree, file)) return url
-
-    const rel = path.relative(Instance.project.worktree, file)
-    const target = path.join(Instance.directory, rel)
-    const next = pathToFileURL(target)
-    next.search = base.search
-    return next.toString()
-  }
-
-  function remapPromptInput(input: PromptInput, session: Session.Info) {
-    if (!session.worktree?.path) return input
-    const parts = input.parts.map((part) => {
-      if (part.type !== "file") return part
-      const url = remapFileUrl(part.url)
-      if (url === part.url) return part
-      return { ...part, url }
-    })
-    return { ...input, parts }
-  }
-
   async function assertAgentAllowed(sessionID: string, name: string) {
     const mode = SessionMode.get(sessionID)
     if (!SessionMode.isAgentAllowed(mode, name)) {
@@ -241,10 +188,9 @@ export namespace SessionPrompt {
     SessionMode.set(session.id, session.mode)
     await applyMode(session, input.mode)
 
-    const current = await ensureWorktree(session)
     const message = await Instance.provide({
-      directory: current.directory,
-      fn: () => createUserMessage(remapPromptInput(input, current)),
+      directory: session.directory,
+      fn: () => createUserMessage(input),
     })
 
     // Extract prompt text from parts for hook
@@ -257,7 +203,7 @@ export namespace SessionPrompt {
       // Trigger UserPromptSubmit hook (skipped for sub-sessions)
       await ClaudePlugin.Hooks.trigger("UserPromptSubmit", {
         sessionID: input.sessionID,
-        parentSessionId: current.parentID,
+        parentSessionId: session.parentID,
         messageID: message.info.id,
         prompt: promptText,
       })
@@ -287,8 +233,7 @@ export namespace SessionPrompt {
       })
     }
     if (permissions.length > 0) {
-      current.permission = permissions
-      await Session.update(current.id, (draft) => {
+      await Session.update(session.id, (draft) => {
         draft.permission = permissions
       })
     }
@@ -316,7 +261,7 @@ export namespace SessionPrompt {
         seen.add(name)
         const filepath = name.startsWith("~/")
           ? path.join(os.homedir(), name.slice(2))
-          : path.resolve(Instance.worktree, name)
+          : path.resolve(Instance.directory, name)
 
         const stats = await fs.stat(filepath).catch(() => undefined)
         if (!stats) {
@@ -387,15 +332,6 @@ export namespace SessionPrompt {
     using _ = defer(() => cancel(sessionID))
 
     const session = await Session.get(sessionID)
-
-    // If session has worktree, run in worktree context
-    if (session.worktree?.path) {
-      log.info("running loop in worktree context", { sessionID, worktree: session.worktree.path })
-      return await Instance.provide({
-        directory: session.worktree.path,
-        fn: () => runLoop(sessionID, session, abort),
-      })
-    }
 
     return await runLoop(sessionID, session, abort)
   })
