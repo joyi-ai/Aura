@@ -16,7 +16,8 @@ import { base64Encode } from "@opencode-ai/util/encode"
 
 export interface UseSessionCommandsOptions {
   sessionId: Accessor<string | undefined>
-  sessionKey: Accessor<string>
+  viewKey: Accessor<string>
+  tabsKey?: Accessor<string>
   isEnabled?: Accessor<boolean>
   onNavigateMessage: (offset: number) => void
   onToggleSteps: () => void
@@ -36,7 +37,7 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
   const sync = useSync()
   const prompt = usePrompt()
   const permission = usePermission()
-  const view = createMemo(() => layout.view(options.sessionKey()))
+  const view = createMemo(() => layout.view(options.viewKey()))
 
   const enabled = () => options.isEnabled?.() ?? true
   command.register(() => [
@@ -58,7 +59,7 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       keybind: "mod+p",
       slash: "open",
       disabled: !enabled(),
-      onSelect: () => dialog.show(() => <DialogSelectFile />),
+      onSelect: () => dialog.show(() => <DialogSelectFile sessionKey={options.tabsKey?.()} />),
     },
     {
       id: "terminal.toggle",

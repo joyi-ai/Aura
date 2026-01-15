@@ -7,24 +7,25 @@ import { AssistantMessage } from "@opencode-ai/sdk/v2/client"
 
 import { useLayout } from "@/context/layout"
 import { useSync } from "@/context/sync"
+import { useSDK } from "@/context/sdk"
+import { makeContextKey } from "@/utils/layout-key"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
   sessionId?: string
-  sessionKey?: string
+  contextKey?: string
 }
 
 export function SessionContextUsage(props: SessionContextUsageProps) {
   const sync = useSync()
   const params = useParams()
   const layout = useLayout()
+  const sdk = useSDK()
 
   const effectiveSessionId = createMemo(() => props.sessionId ?? params.id)
   const variant = createMemo(() => props.variant ?? "button")
-  const sessionKey = createMemo(
-    () => props.sessionKey ?? `${params.dir}${effectiveSessionId() ? "/" + effectiveSessionId() : ""}`,
-  )
-  const tabs = createMemo(() => layout.tabs(sessionKey()))
+  const contextKey = createMemo(() => props.contextKey ?? makeContextKey({ directory: sdk.directory }))
+  const tabs = createMemo(() => layout.tabs(contextKey()))
   const messages = createMemo(() => (effectiveSessionId() ? (sync.data.message[effectiveSessionId()!] ?? []) : []))
 
   const cost = createMemo(() => {

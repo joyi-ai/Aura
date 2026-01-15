@@ -8,6 +8,7 @@ import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
+import { base64Encode } from "@opencode-ai/util/encode"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -85,19 +86,47 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       { key: "file-view", legacy: "file", version: "v1" },
     ] as const
 
+    const parseSessionKey = (key: string) => {
+      const dirMarker = key.indexOf("dir:")
+      if (dirMarker !== -1) {
+        const dirStart = dirMarker + 4
+        const sessionMarker = key.indexOf(":session:", dirStart)
+        const contextMarker = key.indexOf(":context", dirStart)
+        const endCandidates = [sessionMarker, contextMarker].filter((idx) => idx !== -1)
+        const dirEnd = endCandidates.length > 0 ? Math.min(...endCandidates) : key.length
+        const dir = key.slice(dirStart, dirEnd)
+        if (!dir) return
+        let session: string | undefined
+        if (sessionMarker !== -1) {
+          const sessionStart = sessionMarker + ":session:".length
+          const sessionEnd = key.indexOf(":", sessionStart)
+          session = sessionEnd === -1 ? key.slice(sessionStart) : key.slice(sessionStart, sessionEnd)
+        }
+        return { dir, session }
+      }
+
+      if (!key.includes("/")) return
+      const [dir, session] = key.split("/")
+      if (!dir) return
+      return { dir, session }
+    }
+
     const dropSessionState = (keys: string[]) => {
       for (const key of keys) {
-        const parts = key.split("/")
-        const dir = parts[0]
-        const session = parts[1]
-        if (!dir) continue
+        const parsed = parseSessionKey(key)
+        if (!parsed?.dir) continue
+        const { dir, session } = parsed
 
+        const hasPathHint = dir.includes("/") || dir.includes(":")
+        const dirKeys = hasPathHint ? [dir, base64Encode(dir)] : [dir]
         for (const entry of SESSION_STATE_KEYS) {
-          const target = session ? Persist.session(dir, session, entry.key) : Persist.workspace(dir, entry.key)
-          void removePersisted(target)
+          for (const dirKey of dirKeys) {
+            const target = session ? Persist.session(dirKey, session, entry.key) : Persist.workspace(dirKey, entry.key)
+            void removePersisted(target)
 
-          const legacyKey = `${dir}/${entry.legacy}${session ? "/" + session : ""}.${entry.version}`
-          void removePersisted({ key: legacyKey })
+            const legacyKey = `${dirKey}/${entry.legacy}${session ? "/" + session : ""}.${entry.version}`
+            void removePersisted({ key: legacyKey })
+          }
         }
       }
     }

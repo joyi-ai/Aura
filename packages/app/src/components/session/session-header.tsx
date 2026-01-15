@@ -21,6 +21,7 @@ import { SessionLspIndicator } from "@/components/session-lsp-indicator"
 import { SessionMcpIndicator } from "@/components/session-mcp-indicator"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { same } from "@/utils/same"
+import { makeViewKey } from "@/utils/layout-key"
 
 export function SessionHeader() {
   const globalSDK = useGlobalSDK()
@@ -36,8 +37,8 @@ export function SessionHeader() {
   const currentSession = createMemo(() => sessions().find((s) => s.id === params.id))
   const shareEnabled = createMemo(() => sync.data.config.share !== "disabled")
   const worktrees = createMemo(() => layout.projects.list().map((p) => p.worktree), [], { equals: same })
-  const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
-  const view = createMemo(() => layout.view(sessionKey()))
+  const viewKey = createMemo(() => makeViewKey({ directory: sync.directory }))
+  const view = createMemo(() => layout.view(viewKey()))
   const branch = createMemo(() => sync.data.vcs?.branch)
 
   function navigateToProject(directory: string) {

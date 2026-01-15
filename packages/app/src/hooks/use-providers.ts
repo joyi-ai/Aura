@@ -19,9 +19,14 @@ export function useProviders() {
   const globalSync = useGlobalSync()
   const params = useParams()
   const currentDirectory = createMemo(() => base64Decode(params.dir ?? ""))
+  const hasProviderData = (data: { all: unknown[]; connected: unknown[]; default: Record<string, unknown> }) =>
+    data.all.length > 0 || data.connected.length > 0 || Object.keys(data.default ?? {}).length > 0
   const providers = createMemo(() => {
     if (currentDirectory()) {
       const [projectStore] = globalSync.child(currentDirectory())
+      if (!hasProviderData(projectStore.provider) && hasProviderData(globalSync.data.provider)) {
+        return globalSync.data.provider
+      }
       return projectStore.provider
     }
     return globalSync.data.provider

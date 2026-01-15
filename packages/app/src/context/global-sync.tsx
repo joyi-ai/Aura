@@ -28,13 +28,10 @@ import { ErrorPage, type InitError } from "../pages/error"
 import { batch, createContext, useContext, onCleanup, onMount, type ParentProps, Switch, Match } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
+import { normalizeDirectoryKey } from "@/utils/directory"
 
-function normalizeDirectory(input: string | undefined) {
-  if (!input) return ""
-  const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
-  if (!normalized) return ""
-  if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
-  return normalized.toLowerCase()
+function resolveDirectoryKey(input: string | undefined) {
+  return normalizeDirectoryKey(input)
 }
 
 export type AskUserQuestionRequest = {
@@ -138,8 +135,18 @@ function createGlobalSync() {
     provider_auth: {},
   })
 
-  const children: Record<string, ReturnType<typeof createStore<State>>> = {}
+  const children = new Map<string, ReturnType<typeof createStore<State>>>()
+  const childDirectories = new Map<string, string>()
   const sessionListInflight = new Map<string, { target: number; promise: Promise<void> }>()
+  const normalizeProviderList = (data: ProviderListResponse) => ({
+    ...data,
+    all: data.all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(
+        Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
+      ),
+    })),
+  })
   const sessionCursor = (sessions: Session[]) => {
     if (sessions.length === 0) return
     const ordered = sessions
@@ -154,40 +161,52 @@ function createGlobalSync() {
   }
   function child(directory: string) {
     if (!directory) console.error("No directory provided")
-    if (!children[directory]) {
-      children[directory] = createStore<State>({
-        project: "",
-        provider: { all: [], connected: [], default: {} },
-        config: {},
-        path: { state: "", config: "", worktree: "", directory: "", home: "" },
-        status: "loading" as const,
-        agent: [],
-        command: [],
-        session: [],
-        session_more: false,
-        session_status: {},
-        session_diff: {},
-        todo: {},
-        permission: {},
-        askuser: {},
-        planmode: {},
-        mcp: {},
-        lsp: [],
-        vcs: undefined,
-        limit: 5,
-        message: {},
-        part: {},
-      })
+    const key = resolveDirectoryKey(directory)
+    if (!children.has(key)) {
+      children.set(
+        key,
+        createStore<State>({
+          project: "",
+          provider: { all: [], connected: [], default: {} },
+          config: {},
+          path: { state: "", config: "", worktree: "", directory: "", home: "" },
+          status: "loading" as const,
+          agent: [],
+          command: [],
+          session: [],
+          session_more: false,
+          session_status: {},
+          session_diff: {},
+          todo: {},
+          permission: {},
+          askuser: {},
+          planmode: {},
+          mcp: {},
+          lsp: [],
+          vcs: undefined,
+          limit: 5,
+          message: {},
+          part: {},
+        }),
+      )
+      childDirectories.set(key, directory)
       bootstrapInstance(directory)
     }
-    return children[directory]
+    return children.get(key)!
+  }
+
+  function resolveDirectory(directory: string) {
+    const key = resolveDirectoryKey(directory)
+    return childDirectories.get(key) ?? directory
   }
 
   async function loadSessions(directory: string) {
+    const key = resolveDirectoryKey(directory)
+    const resolvedDirectory = resolveDirectory(directory)
     const [store, setStore] = child(directory)
     const target = Math.max(1, store.limit)
 
-    const inflight = sessionListInflight.get(directory)
+    const inflight = sessionListInflight.get(key)
     if (inflight) {
       if (inflight.target >= target) return inflight.promise
       return inflight.promise.finally(() => loadSessions(directory))
@@ -201,19 +220,19 @@ function createGlobalSync() {
     const pageLimit = Math.max(1, remaining)
     const limit = pageLimit + 1
 
-    const query = afterID ? { directory, limit, afterID } : { directory, limit }
+    const query = afterID ? { directory: resolvedDirectory, limit, afterID } : { directory: resolvedDirectory, limit }
     const promise = globalSDK.client.session
       .list(query)
       .then((x) => {
-        const root = normalizeDirectory(directory)
-        const fallback = normalizeDirectory(globalStore.path.directory)
+        const root = resolveDirectoryKey(resolvedDirectory)
+        const fallback = resolveDirectoryKey(globalStore.path.directory)
         const projectById = globalStore.project.find((p) => p.id === store.project)
-        const projectByPath = globalStore.project.find((p) => normalizeDirectory(p.worktree) === root)
+        const projectByPath = globalStore.project.find((p) => resolveDirectoryKey(p.worktree) === root)
         const project = projectById ?? projectByPath
-        const sandboxes = (project?.sandboxes ?? []).map(normalizeDirectory).filter(Boolean)
+        const sandboxes = (project?.sandboxes ?? []).map(resolveDirectoryKey).filter(Boolean)
         const allowed = new Set([root, ...sandboxes].filter(Boolean))
         const allow = (input: string | undefined) => {
-          const dir = normalizeDirectory(input)
+          const dir = resolveDirectoryKey(input)
           if (dir) return allowed.has(dir)
           if (!fallback) return false
           return root === fallback
@@ -224,7 +243,7 @@ function createGlobalSync() {
           .filter((s) => allow(s.directory))
           .map((session) => {
             if (session.directory) return session
-            return { ...session, directory }
+            return { ...session, directory: resolvedDirectory }
           })
         const sessions = fetched.slice(0, pageLimit)
         const hasMore = (x.data ?? []).length > pageLimit
@@ -247,26 +266,27 @@ function createGlobalSync() {
       })
       .catch((err) => {
         console.error("Failed to load sessions", err)
-        const project = getFilename(directory)
+        const project = getFilename(resolvedDirectory)
         showToast({ title: `Failed to load sessions for ${project}`, description: err.message })
       })
       .finally(() => {
-        const current = sessionListInflight.get(directory)
+        const current = sessionListInflight.get(key)
         if (current?.promise === promise) {
-          sessionListInflight.delete(directory)
+          sessionListInflight.delete(key)
         }
       })
 
-    sessionListInflight.set(directory, { target, promise })
+    sessionListInflight.set(key, { target, promise })
     return promise
   }
 
   async function bootstrapInstance(directory: string) {
     if (!directory) return
+    const resolvedDirectory = resolveDirectory(directory)
     const [store, setStore] = child(directory)
     const sdk = createOpencodeClient({
       baseUrl: globalSDK.url,
-      directory,
+      directory: resolvedDirectory,
       throwOnError: true,
       ...fetchConfig,
     })
@@ -276,15 +296,7 @@ function createGlobalSync() {
       provider: () =>
         sdk.provider.list().then((x) => {
           const data = x.data!
-          setStore("provider", {
-            ...data,
-            all: data.all.map((provider) => ({
-              ...provider,
-              models: Object.fromEntries(
-                Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
-              ),
-            })),
-          })
+          setStore("provider", normalizeProviderList(data))
         }),
       agent: () => sdk.app.agents().then((x) => setStore("agent", x.data ?? [])),
       config: () => sdk.config.get().then((x) => setStore("config", x.data!)),
@@ -706,6 +718,43 @@ function createGlobalSync() {
   })
   onCleanup(unsub)
 
+  async function refreshProviders() {
+    // Refresh only provider data without setting error state
+    // This is safe to call after provider auth changes without risking app unmount
+    const refreshGlobal = Promise.all([
+      globalSDK.client.provider.list().then((x) => {
+        const data = x.data!
+        setGlobalStore("provider", normalizeProviderList(data))
+      }),
+      globalSDK.client.provider.auth().then((x) => {
+        setGlobalStore("provider_auth", x.data ?? {})
+      }),
+    ])
+
+    const refreshChildren = Array.from(children.entries()).map(([key, childStore]) => {
+      const directory = childDirectories.get(key)
+      if (!directory) return Promise.resolve()
+      const sdk = createOpencodeClient({
+        baseUrl: globalSDK.url,
+        directory,
+        throwOnError: true,
+        ...fetchConfig,
+      })
+      const [, setChild] = childStore
+      return sdk.provider
+        .list()
+        .then((x) => {
+          const data = x.data!
+          setChild("provider", normalizeProviderList(data))
+        })
+        .catch(() => undefined)
+    })
+
+    await Promise.all([refreshGlobal, ...refreshChildren]).catch(() => {
+      // Silently ignore errors - provider data will be stale but app won't unmount
+    })
+  }
+
   async function bootstrap() {
     const health = await globalSDK.client.global
       .health()
@@ -738,15 +787,7 @@ function createGlobalSync() {
       retry(() =>
         globalSDK.client.provider.list().then((x) => {
           const data = x.data!
-          setGlobalStore("provider", {
-            ...data,
-            all: data.all.map((provider) => ({
-              ...provider,
-              models: Object.fromEntries(
-                Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
-              ),
-            })),
-          })
+          setGlobalStore("provider", normalizeProviderList(data))
         }),
       ),
       retry(() =>
@@ -773,6 +814,7 @@ function createGlobalSync() {
     },
     child,
     bootstrap,
+    refreshProviders,
     project: {
       loadSessions,
     },

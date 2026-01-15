@@ -15,6 +15,7 @@ import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DateTime } from "luxon"
 import { ThemeDropup } from "@/components/theme-dropup"
 import { getFilename } from "@opencode-ai/util/path"
+import { normalizeDirectoryKey } from "@/utils/directory"
 
 export type HomeContentVariant = "page" | "pane"
 
@@ -30,14 +31,6 @@ export interface HomeContentProps {
   hideLogo?: boolean
   showRelativeTime?: boolean
   showThemePicker?: boolean
-}
-
-const normalizeDirectory = (input: string | undefined) => {
-  if (!input) return ""
-  const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
-  if (!normalized) return ""
-  if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
-  return normalized.toLowerCase()
 }
 
 export function HomeContent(props: HomeContentProps) {
@@ -70,7 +63,7 @@ export function HomeContent(props: HomeContentProps) {
     if (props.variant === "page") return mostRecentProject() || defaultProject()
     return undefined
   })
-  const selectedProjectKey = createMemo(() => normalizeDirectory(selectedProject()))
+  const selectedProjectKey = createMemo(() => normalizeDirectoryKey(selectedProject()))
 
   function selectProject(directory: string) {
     setInternalSelected(directory)
@@ -117,9 +110,9 @@ export function HomeContent(props: HomeContentProps) {
     const normalized = selectedProjectKey()
     if (!normalized) return undefined
     return sync.data.project.find((project) => {
-      if (normalizeDirectory(project.worktree) === normalized) return true
+      if (normalizeDirectoryKey(project.worktree) === normalized) return true
       const sandboxes = project.sandboxes ?? []
-      return sandboxes.some((sandbox) => normalizeDirectory(sandbox) === normalized)
+      return sandboxes.some((sandbox) => normalizeDirectoryKey(sandbox) === normalized)
     })
   })
 
@@ -127,7 +120,7 @@ export function HomeContent(props: HomeContentProps) {
   const recentProjects = createMemo(() => {
     const selectedKey = selectedProjectKey()
     return sync.data.project
-      .filter((project) => normalizeDirectory(project.worktree) !== selectedKey)
+      .filter((project) => normalizeDirectoryKey(project.worktree) !== selectedKey)
       .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
       .slice(0, 4)
   })
@@ -141,7 +134,7 @@ export function HomeContent(props: HomeContentProps) {
   const isCompact = createMemo(() => props.variant === "page" && props.hideLogo)
   const otherProjects = createMemo(() => {
     const selectedKey = selectedProjectKey()
-    return projects().filter((project) => normalizeDirectory(project.worktree) !== selectedKey)
+    return projects().filter((project) => normalizeDirectoryKey(project.worktree) !== selectedKey)
   })
 
   const ServerStatusContent = (props: { nameClass?: string }) => (
@@ -189,12 +182,12 @@ export function HomeContent(props: HomeContentProps) {
   const worktreePaths = createMemo(() => {
     const project = worktreeProject()
     if (!project) return []
-    const baseKey = normalizeDirectory(project.worktree)
+    const baseKey = normalizeDirectoryKey(project.worktree)
     const sandboxes = project.sandboxes ?? []
     const deleted = deletedWorktrees()
     const unique = new Map<string, string>()
     for (const dir of sandboxes) {
-      const key = normalizeDirectory(dir)
+      const key = normalizeDirectoryKey(dir)
       if (!key) continue
       if (key === baseKey) continue
       if (unique.has(key)) continue
@@ -204,13 +197,13 @@ export function HomeContent(props: HomeContentProps) {
     }
     const current = props.currentWorktree
     if (current) {
-      const currentKey = normalizeDirectory(current)
+      const currentKey = normalizeDirectoryKey(current)
       if (currentKey && currentKey !== baseKey && !unique.has(currentKey) && !deleted.has(currentKey)) {
         unique.set(currentKey, current)
       }
     }
     // Clean up deletedWorktrees - remove entries that are no longer in sandboxes
-    const sandboxKeys = new Set(sandboxes.map(normalizeDirectory))
+    const sandboxKeys = new Set(sandboxes.map(normalizeDirectoryKey))
     const toCleanup = [...deleted].filter((key) => !sandboxKeys.has(key))
     if (toCleanup.length > 0) {
       setDeletedWorktrees((prev) => {
@@ -227,7 +220,7 @@ export function HomeContent(props: HomeContentProps) {
   const worktreeOptions = createMemo(() => {
     const project = worktreeProject()
     if (!project) return []
-    const baseKey = normalizeDirectory(project.worktree)
+    const baseKey = normalizeDirectoryKey(project.worktree)
     const options: WorktreeOption[] = []
     if (canCreateWorktree()) options.push({ kind: "new", id: "new" })
     options.push({ kind: "root", path: project.worktree, id: `root:${baseKey}` })
@@ -235,7 +228,7 @@ export function HomeContent(props: HomeContentProps) {
       ...worktreePaths().map((path) => ({
         kind: "worktree" as const,
         path,
-        id: `worktree:${normalizeDirectory(path)}`,
+        id: `worktree:${normalizeDirectoryKey(path)}`,
       })),
     )
     return options
@@ -245,10 +238,10 @@ export function HomeContent(props: HomeContentProps) {
     const options = worktreeOptions()
     if (options.length === 0) return undefined
     const root = options.find((option) => option.kind === "root") ?? options[0]
-    const currentKey = normalizeDirectory(props.currentWorktree)
+    const currentKey = normalizeDirectoryKey(props.currentWorktree)
     if (!currentKey) return root
     return (
-      options.find((option) => option.kind !== "new" && normalizeDirectory(option.path) === currentKey) ?? root
+      options.find((option) => option.kind !== "new" && normalizeDirectoryKey(option.path) === currentKey) ?? root
     )
   })
 
@@ -290,7 +283,7 @@ export function HomeContent(props: HomeContentProps) {
   const isManagedWorktree = (path: string) => {
     const project = worktreeProject()
     if (!project || !("id" in project)) return false
-    const normalized = normalizeDirectory(path).toLowerCase()
+    const normalized = normalizeDirectoryKey(path).toLowerCase()
     const projectId = project.id.toLowerCase()
     const pattern = new RegExp(`/opencode/worktree/${projectId}/[^/]+/?$`)
     return pattern.test(normalized)
@@ -298,7 +291,7 @@ export function HomeContent(props: HomeContentProps) {
 
   async function handleDeleteWorktree(path: string) {
     if (!isManagedWorktree(path)) return
-    const key = normalizeDirectory(path)
+    const key = normalizeDirectoryKey(path)
     // Add to deleting set
     setDeletingWorktrees((prev) => new Set([...prev, path]))
     try {

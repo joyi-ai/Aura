@@ -15,6 +15,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Persist, persisted } from "@/utils/persist"
 import { paneCache } from "./pane-cache"
+import { makeViewKey } from "@/utils/layout-key"
 
 const MAX_TERMINAL_HEIGHT = 200
 const MAX_SESSION_CACHE = 50
@@ -27,10 +28,8 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
   const local = useLocal()
   const sdk = useSDK()
   const sync = useSync()
-  const sessionKey = createMemo(
-    () => `multi-${props.paneId}-${sdk.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
-  )
-  const view = createMemo(() => layout.view(sessionKey()))
+  const viewKey = createMemo(() => makeViewKey({ paneId: props.paneId, directory: sdk.directory }))
+  const view = createMemo(() => layout.view(viewKey()))
   const sessionInfo = createMemo(() => {
     const sessionId = props.sessionId
     if (!sessionId) return undefined

@@ -7,6 +7,7 @@ import { useLayout } from "@/context/layout"
 import { useMultiPane } from "@/context/multi-pane"
 import { truncateDirectoryPrefix } from "@opencode-ai/util/path"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import { makeViewKey } from "@/utils/layout-key"
 
 export interface SessionPaneHeaderProps {
   directory: string
@@ -28,10 +29,8 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
   const branch = createMemo(() => sync.data.vcs?.branch)
   const focused = createMemo(() => props.isFocused?.() ?? true)
   const currentDirectory = createMemo(() => props.projectDirectory ?? props.directory)
-  const sessionKey = createMemo(
-    () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
-  )
-  const view = createMemo(() => layout.view(sessionKey()))
+  const viewKey = createMemo(() => makeViewKey({ paneId: props.paneId, directory: props.directory }))
+  const view = createMemo(() => layout.view(viewKey()))
 
   function navigateToProject(directory: string | undefined) {
     if (!directory) return

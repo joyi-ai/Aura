@@ -48,6 +48,7 @@ import { VoiceButton } from "@/components/voice-button"
 import { SettingsDialog } from "@/components/settings-dialog"
 import { DialogSelectModel } from "@/components/dialog-select-model"
 import { DialogDeleteWorktree } from "@/components/dialog-delete-worktree"
+import { makeContextKey, makeSessionKey } from "@/utils/layout-key"
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, "application/pdf"]
@@ -450,12 +451,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sessionKey = createMemo(() => {
     const sessionId = effectiveSessionId()
     if (isPaneScoped()) {
-      return `multi-${props.paneId}-${sdk.directory}${sessionId ? "/" + sessionId : ""}`
+      return makeSessionKey({ paneId: props.paneId, directory: sdk.directory, sessionId })
     }
-    return `${params.dir}${sessionId ? "/" + sessionId : ""}`
+    return makeSessionKey({ directory: sdk.directory, sessionId })
   })
+  const contextKey = createMemo(() =>
+    makeContextKey({ paneId: isPaneScoped() ? props.paneId : undefined, directory: sdk.directory }),
+  )
   const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const view = createMemo(() => layout.view(sessionKey()))
   const activeFile = createMemo(() => {
     const tab = tabs().active()
     if (!tab) return
@@ -2671,7 +2674,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               }}
             />
             <div class="flex items-center gap-2">
-              <SessionContextUsage sessionId={effectiveSessionId()} sessionKey={sessionKey()} />
+              <SessionContextUsage sessionId={effectiveSessionId()} contextKey={contextKey()} />
               <Show when={(info() as any)?.worktree?.path}>
                 <button
                   type="button"

@@ -9,6 +9,7 @@ import { useMultiPane } from "@/context/multi-pane"
 import { paneCache } from "@/components/multi-pane/pane-cache"
 import { getFilename, truncateDirectoryPrefix } from "@opencode-ai/util/path"
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import { makeViewKey } from "@/utils/layout-key"
 
 type PaneHeaderProps = {
   paneId: string
@@ -24,10 +25,8 @@ export function PaneHeader(props: PaneHeaderProps) {
   const sync = useSync()
   const local = useLocal()
   const multiPane = useMultiPane()
-  const sessionKey = createMemo(
-    () => `multi-${props.paneId}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
-  )
-  const view = createMemo(() => layout.view(sessionKey()))
+  const viewKey = createMemo(() => makeViewKey({ paneId: props.paneId, directory: props.directory }))
+  const view = createMemo(() => layout.view(viewKey()))
 
   const sessions = createMemo(() => (sync.data.session ?? []).filter((s) => !s.parentID))
   const currentSession = createMemo(() => sessions().find((s) => s.id === props.sessionId))

@@ -22,6 +22,7 @@ import { ContextTab } from "./context-tab"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { useNotification } from "@/context/notification"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
+import { makeContextKey, makeSessionKey, makeViewKey } from "@/utils/layout-key"
 
 export interface SessionPaneProps {
   paneId?: string
@@ -65,13 +66,14 @@ export function SessionPane(props: SessionPaneProps) {
   const expectedDirectory = createMemo(() => props.directory)
   const sdkDirectoryMatches = createMemo(() => expectedDirectory() !== "" && sdk.directory === expectedDirectory())
 
-  // Session key for tabs
-  const sessionKey = createMemo(
-    () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
+  const sessionKey = createMemo(() =>
+    makeSessionKey({ paneId: props.paneId, directory: props.directory, sessionId: sessionId() }),
   )
+  const contextKey = createMemo(() => makeContextKey({ paneId: props.paneId, directory: props.directory }))
+  const viewKey = createMemo(() => makeViewKey({ paneId: props.paneId, directory: props.directory }))
 
   // Tabs for context panel
-  const tabs = createMemo(() => layout.tabs(sessionKey()))
+  const tabs = createMemo(() => layout.tabs(contextKey()))
   const activeTab = createMemo(() => tabs().active())
 
   // Todos
@@ -188,7 +190,8 @@ export function SessionPane(props: SessionPaneProps) {
   // Session commands (only if enabled/focused)
   useSessionCommands({
     sessionId,
-    sessionKey,
+    viewKey,
+    tabsKey: sessionKey,
     isEnabled: isFocused,
     onNavigateMessage: sessionMessages.navigateByOffset,
     onToggleSteps: () => {

@@ -65,6 +65,7 @@ import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
 import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
 import { SettingsDialog } from "@/components/settings-dialog"
+import { normalizeDirectoryKey } from "@/utils/directory"
 
 export default function Layout(props: ParentProps) {
   const [store, setStore] = createStore({
@@ -263,16 +264,8 @@ export default function Layout(props: ParentProps) {
     })
   })
 
-  function normalizeDirectory(input: string | undefined) {
-    if (!input) return ""
-    const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
-    if (!normalized) return ""
-    if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
-    return normalized.toLowerCase()
-  }
-
   function sameDirectory(a: string | undefined, b: string | undefined) {
-    return normalizeDirectory(a) === normalizeDirectory(b)
+    return normalizeDirectoryKey(a) === normalizeDirectoryKey(b)
   }
 
   function projectDirectories(project: LocalProject) {
@@ -313,7 +306,10 @@ export default function Layout(props: ParentProps) {
   const currentProject = createMemo(() => {
     const directory = params.dir ? base64Decode(params.dir) : undefined
     if (!directory) return
-    return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
+    return layout
+      .projects
+      .list()
+      .find((p) => sameDirectory(p.worktree, directory) || (p.sandboxes ?? []).some((sandbox) => sameDirectory(sandbox, directory)))
   })
 
   function projectSessions(project: LocalProject | undefined) {
