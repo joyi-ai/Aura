@@ -70,6 +70,7 @@ export function HomeContent(props: HomeContentProps) {
     if (props.variant === "page") return mostRecentProject() || defaultProject()
     return undefined
   })
+  const selectedProjectKey = createMemo(() => normalizeDirectory(selectedProject()))
 
   function selectProject(directory: string) {
     setInternalSelected(directory)
@@ -113,23 +114,18 @@ export function HomeContent(props: HomeContentProps) {
 
   // Find the selected project in sync data (if it exists)
   const selectedProjectData = createMemo(() => {
-    const selected = selectedProject()
-    if (!selected) return undefined
-    const normalized = normalizeDirectory(selected)
-    const direct = sync.data.project.find((project) => normalizeDirectory(project.worktree) === normalized)
-    if (direct) return direct
-    const sandboxMatch = sync.data.project.find((project) => {
+    const normalized = selectedProjectKey()
+    if (!normalized) return undefined
+    return sync.data.project.find((project) => {
+      if (normalizeDirectory(project.worktree) === normalized) return true
       const sandboxes = project.sandboxes ?? []
       return sandboxes.some((sandbox) => normalizeDirectory(sandbox) === normalized)
     })
-    if (sandboxMatch) return sandboxMatch
-    return undefined
   })
 
   // Recent projects: exclude selected, limit to 4
   const recentProjects = createMemo(() => {
-    const selected = selectedProject()
-    const selectedKey = normalizeDirectory(selected)
+    const selectedKey = selectedProjectKey()
     return sync.data.project
       .filter((project) => normalizeDirectory(project.worktree) !== selectedKey)
       .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
@@ -144,9 +140,8 @@ export function HomeContent(props: HomeContentProps) {
   const showThemePicker = createMemo(() => props.variant === "page" && props.showThemePicker === true)
   const isCompact = createMemo(() => props.variant === "page" && props.hideLogo)
   const otherProjects = createMemo(() => {
-    const current = selectedProject()
-    const currentKey = normalizeDirectory(current)
-    return projects().filter((project) => normalizeDirectory(project.worktree) !== currentKey)
+    const selectedKey = selectedProjectKey()
+    return projects().filter((project) => normalizeDirectory(project.worktree) !== selectedKey)
   })
 
   const ServerStatusContent = (props: { nameClass?: string }) => (
@@ -182,20 +177,19 @@ export function HomeContent(props: HomeContentProps) {
   const worktreeProject = createMemo(() => {
     const selected = selectedProject()
     if (!selected) return undefined
-    const project = selectedProjectData()
-    if (project) return project
-    return {
-      worktree: selected,
-      sandboxes: [],
-      vcs: undefined,
-    }
+    return (
+      selectedProjectData() ?? {
+        worktree: selected,
+        sandboxes: [],
+        vcs: undefined,
+      }
+    )
   })
 
   const worktreePaths = createMemo(() => {
     const project = worktreeProject()
     if (!project) return []
-    const base = project.worktree
-    const baseKey = normalizeDirectory(base)
+    const baseKey = normalizeDirectory(project.worktree)
     const sandboxes = project.sandboxes ?? []
     const deleted = deletedWorktrees()
     const unique = new Map<string, string>()
@@ -228,12 +222,7 @@ export function HomeContent(props: HomeContentProps) {
     return Array.from(unique.values()).sort((a, b) => a.localeCompare(b))
   })
 
-  const canCreateWorktree = createMemo(() => {
-    const project = worktreeProject()
-    if (!project) return false
-    if (project.vcs !== "git") return false
-    return !!props.onCreateWorktree
-  })
+  const canCreateWorktree = createMemo(() => !!props.onCreateWorktree && worktreeProject()?.vcs === "git")
 
   const worktreeOptions = createMemo(() => {
     const project = worktreeProject()
@@ -255,16 +244,12 @@ export function HomeContent(props: HomeContentProps) {
   const currentWorktreeOption = createMemo(() => {
     const options = worktreeOptions()
     if (options.length === 0) return undefined
-    const current = props.currentWorktree
-    if (!current) return options.find((option) => option.kind === "root") ?? options[0]
-    const currentKey = normalizeDirectory(current)
-    // Find exact match - this will match root if current equals root path
-    const match = options.find((option) => {
-      if (option.kind === "new") return false
-      return normalizeDirectory(option.path) === currentKey
-    })
-    if (match) return match
-    return options.find((option) => option.kind === "root") ?? options[0]
+    const root = options.find((option) => option.kind === "root") ?? options[0]
+    const currentKey = normalizeDirectory(props.currentWorktree)
+    if (!currentKey) return root
+    return (
+      options.find((option) => option.kind !== "new" && normalizeDirectory(option.path) === currentKey) ?? root
+    )
   })
 
   async function handleWorktreeSelect(option: WorktreeOption | undefined) {

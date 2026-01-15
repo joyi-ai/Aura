@@ -70,14 +70,12 @@ export function HomeScreen(props: HomeScreenProps) {
     worktree: undefined,
   })
 
-  const mostRecent = createMemo(() => {
+  const preferredProject = createMemo(() => {
     const sorted = globalSync.data.project.toSorted(
       (a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created),
     )
-    return sorted[0]?.worktree
+    return sorted[0]?.worktree || globalSync.data.path.directory
   })
-  const defaultDirectory = createMemo(() => globalSync.data.path.directory)
-  const preferredProject = createMemo(() => mostRecent() || defaultDirectory())
 
   createEffect(() => {
     if (props.selectedProject !== undefined) return
@@ -94,10 +92,7 @@ export function HomeScreen(props: HomeScreenProps) {
     if (props.selectedProject === undefined) {
       setState("project", directory)
     }
-    if (props.currentWorktree === undefined) {
-      setState("worktree", undefined)
-    }
-    props.onWorktreeSelected?.(undefined)
+    handleSelectWorktree(undefined)
     layout.projects.open(directory)
     props.onProjectSelected?.(directory)
   }
