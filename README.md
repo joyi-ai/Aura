@@ -13,13 +13,6 @@ Desktop App for Claude Code, Codex, and Opencode.
 - **Enhanced UI** - smooth animations, gradient color schemes
 - **Mouse** - Right-click specific actions for ease of use.
 
-### Changed
-- Modifications to Provider, Model selection UI
-- Performance optimizations (message parts caching, git status caching)
-
-### Removed
-- **TUI** - Terminal UI completely removed
-- **VSCode extension** - Removed in favor of desktop-first approach
 
 ## Quick Start
 
