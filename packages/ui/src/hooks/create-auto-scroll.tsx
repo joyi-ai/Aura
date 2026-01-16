@@ -21,15 +21,6 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   const active = () => options.working() || settling
 
-  const startSettling = () => {
-    settling = true
-    if (settleTimer) clearTimeout(settleTimer)
-    settleTimer = setTimeout(() => {
-      settling = false
-      settleTimer = undefined
-    }, 300)
-  }
-
   const distanceFromBottom = () => {
     const el = scroll
     if (!el) return 0
@@ -43,6 +34,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const scrollToBottom = (force: boolean) => {
+    if (!force && !active()) return
     if (!scroll) return
 
     if (!force && store.userScrolled) return
@@ -55,8 +47,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
     scrollToBottomNow(behavior)
   }
 
-  const stop = (fromInteraction = false) => {
-    if (fromInteraction && !active()) return
+  const stop = () => {
+    if (!active()) return
     if (store.userScrolled) return
 
     setStore("userScrolled", true)
@@ -91,6 +83,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const handleScroll = () => {
+    if (!active()) return
     if (!scroll) return
 
     if (distanceFromBottom() < 10) {
@@ -102,13 +95,13 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const handleInteraction = () => {
-    stop(true)
+    stop()
   }
 
   createResizeObserver(
     () => store.contentRef,
     () => {
-      startSettling()
+      if (!active()) return
       if (store.userScrolled) return
       scrollToBottom(false)
     },
@@ -116,16 +109,21 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   createEffect(
     on(options.working, (working) => {
+      settling = false
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = undefined
+
+      setStore("userScrolled", false)
+
       if (working) {
-        settling = false
-        if (settleTimer) clearTimeout(settleTimer)
-        settleTimer = undefined
-        setStore("userScrolled", false)
         scrollToBottom(true)
         return
       }
 
-      startSettling()
+      settling = true
+      settleTimer = setTimeout(() => {
+        settling = false
+      }, 300)
     }),
   )
 
@@ -146,6 +144,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
       if (!el) return
 
+      el.style.overflowAnchor = "none"
       el.addEventListener("wheel", handleWheel, { passive: true })
       el.addEventListener("pointerdown", handlePointerDown)
       el.addEventListener("touchstart", handleTouchStart, { passive: true })

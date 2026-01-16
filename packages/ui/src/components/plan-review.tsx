@@ -1,7 +1,7 @@
 import { Component, createMemo, createSignal, Show } from "solid-js"
-import { Button } from "./button"
 import { Icon } from "./icon"
 import { Markdown } from "./markdown"
+import { Spinner } from "./spinner"
 import type { ToolProps } from "./message-part"
 import { useData } from "../context/data"
 import "./plan-review.css"
@@ -32,12 +32,14 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
   // Track submission state
   const [isSubmitting, setIsSubmitting] = createSignal(false)
   const [submitted, setSubmitted] = createSignal<"approved" | "rejected" | null>(null)
+  const [activeAction, setActiveAction] = createSignal<"approve" | "reject" | null>(null)
 
   const handleApprove = async () => {
     const request = pendingRequest()
     if (!request || !data.respondToPlanMode || isSubmitting()) return
 
     setIsSubmitting(true)
+    setActiveAction("approve")
     try {
       await data.respondToPlanMode({
         requestID: request.id,
@@ -48,6 +50,7 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
       data.setAgent?.("build")
     } catch {
       setIsSubmitting(false)
+      setActiveAction(null)
     }
   }
 
@@ -56,6 +59,7 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
     if (!request || !data.respondToPlanMode || isSubmitting()) return
 
     setIsSubmitting(true)
+    setActiveAction("reject")
     try {
       await data.respondToPlanMode({
         requestID: request.id,
@@ -64,6 +68,7 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
       setSubmitted("rejected")
     } catch {
       setIsSubmitting(false)
+      setActiveAction(null)
     }
   }
 
@@ -102,16 +107,31 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
         </div>
       </Show>
       <div data-slot="plan-review-actions">
-        <Button variant="ghost" size="small" onClick={handleReject} disabled={isSubmitting()}>
-          <Show when={isSubmitting()} fallback="Reject">
-            ...
+        <button
+          type="button"
+          data-slot="plan-review-reject-btn"
+          data-submitting={isSubmitting() && activeAction() === "reject"}
+          onClick={handleReject}
+          disabled={isSubmitting()}
+        >
+          <Show when={isSubmitting() && activeAction() === "reject"}>
+            <Spinner />
           </Show>
-        </Button>
-        <Button variant="primary" size="small" onClick={handleApprove} disabled={isSubmitting()}>
-          <Show when={isSubmitting()} fallback="Approve Plan">
-            Approving...
+          {isSubmitting() && activeAction() === "reject" ? "Rejecting..." : "Reject"}
+        </button>
+        <button
+          type="button"
+          data-slot="plan-review-approve-btn"
+          data-ready="true"
+          data-submitting={isSubmitting() && activeAction() === "approve"}
+          onClick={handleApprove}
+          disabled={isSubmitting()}
+        >
+          <Show when={isSubmitting() && activeAction() === "approve"}>
+            <Spinner />
           </Show>
-        </Button>
+          {isSubmitting() && activeAction() === "approve" ? "Approving..." : "Approve Plan"}
+        </button>
       </div>
     </div>
   )

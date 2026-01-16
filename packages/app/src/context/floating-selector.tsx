@@ -144,6 +144,9 @@ export function FloatingSelectorProvider(props: ParentProps) {
   }
 
   const handleClickOutside = (e: MouseEvent) => {
+    // Ignore if inside sidebar to ensure sidebar clicks work immediately
+    if (isInsideSidebar(e.target)) return
+
     if (state.isOpen && !isInsideFloatingSelector(e.target)) {
       // Single click outside closes the selector
       if (e.button === 0 && !rightPressed) {

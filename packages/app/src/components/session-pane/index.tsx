@@ -4,6 +4,7 @@ import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { SessionTodoFooter } from "@opencode-ai/ui/session-todo-footer"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
+import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { DateTime } from "luxon"
 import { createDraggable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
@@ -207,25 +208,122 @@ export function SessionPane(props: SessionPaneProps) {
 
   const sessionTurnPadding = () => "pb-0"
 
-  // Auto-scroll: scroll to bottom when content grows, if user is near bottom
+  // Auto-scroll: keep new user messages aligned to the top while tracking bottom state
   const [scrollContainer, setScrollContainer] = createSignal<HTMLDivElement>()
+  const [contentContainer, setContentContainer] = createSignal<HTMLDivElement>()
   const [isAtBottom, setIsAtBottom] = createSignal(true)
+  const [containerHeight, setContainerHeight] = createSignal(0)
+  const [topAnchorId, setTopAnchorId] = createSignal<string | undefined>(undefined)
+  const topAnchorGap = 16
+  const autoScroll = createAutoScroll({
+    working: isAtBottom,
+  })
+
+  const updateIsAtBottom = (el: HTMLElement) => {
+    setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 50)
+  }
+
+  const setScrollRef = (el: HTMLDivElement | undefined) => {
+    setScrollContainer(el)
+    autoScroll.scrollRef(el)
+    setContainerHeight(el?.clientHeight ?? 0)
+  }
+
+  const getMessageOffsetTop = (messageId: string, container: HTMLElement) => {
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(messageId)
+        : messageId.replaceAll('"', '\\"')
+    const el = container.querySelector(`[data-message-id="${escaped}"]`) as HTMLElement | null
+    if (!el) return
+    const a = el.getBoundingClientRect()
+    const b = container.getBoundingClientRect()
+    return a.top - b.top + container.scrollTop
+  }
+
+  const scrollToMessageTop = (messageId: string, behavior: ScrollBehavior = "auto") => {
+    const container = scrollContainer()
+    if (!container) return
+    const offsetTop = getMessageOffsetTop(messageId, container)
+    if (offsetTop === undefined) return
+    const top = Math.max(0, offsetTop - topAnchorGap)
+    container.scrollTo({ top, behavior })
+    updateIsAtBottom(container)
+  }
+
+  const clampTopAnchorScroll = (container: HTMLElement) => {
+    const anchorId = topAnchorId()
+    if (!anchorId) return
+    const offsetTop = getMessageOffsetTop(anchorId, container)
+    if (offsetTop === undefined) return
+    const maxRealScrollTop = Math.max(0, container.scrollHeight - topAnchorSpacerHeight() - container.clientHeight)
+    const targetTop = Math.max(0, offsetTop - topAnchorGap)
+    const maxAllowed = Math.max(maxRealScrollTop, targetTop)
+    if (container.scrollTop > maxAllowed) {
+      container.scrollTop = maxAllowed
+    }
+  }
 
   createEffect(() => {
     const container = scrollContainer()
     if (!container) return
-    const content = container.firstElementChild as HTMLElement | null
-    if (!content) return
-    // Observe the messages container (inner div) which actually grows when content streams in
-    const messagesContainer = content.firstElementChild as HTMLElement | null
-    if (!messagesContainer) return
-
     const observer = new ResizeObserver(() => {
-      if (isAtBottom()) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
+      setContainerHeight(container.clientHeight)
+      if (!isAtBottom()) return
+      autoScroll.forceScrollToBottom()
     })
-    observer.observe(messagesContainer)
+    observer.observe(container)
     return () => observer.disconnect()
   })
+
+  createEffect(() => {
+    const container = scrollContainer()
+    const content = contentContainer()
+    if (!container || !content) return
+    const observer = new ResizeObserver(() => {
+      clampTopAnchorScroll(container)
+      updateIsAtBottom(container)
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  })
+
+  createEffect(
+    on(
+      () => sessionMessages.lastUserMessage()?.id,
+      (id, prevId) => {
+        if (!id) {
+          setTopAnchorId(undefined)
+          return
+        }
+        if (!prevId) {
+          if (sessionMessages.visibleUserMessages().length !== 1) return
+          setTopAnchorId(id)
+          setIsAtBottom(false)
+          requestAnimationFrame(() => {
+            scrollToMessageTop(id, "smooth")
+          })
+          return
+        }
+        if (id <= prevId) return
+        setTopAnchorId(id)
+        setIsAtBottom(false)
+        requestAnimationFrame(() => {
+          scrollToMessageTop(id, "smooth")
+        })
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => sessionId(),
+      () => {
+        setTopAnchorId(undefined)
+      },
+    ),
+  )
 
   // Scroll to bottom when session loads
   createEffect(
@@ -235,7 +333,7 @@ export function SessionPane(props: SessionPaneProps) {
         const container = scrollContainer()
         if (container) {
           requestAnimationFrame(() => {
-            container.scrollTop = container.scrollHeight
+            autoScroll.forceScrollToBottom()
             setIsAtBottom(true)
           })
         }
@@ -292,6 +390,11 @@ export function SessionPane(props: SessionPaneProps) {
     return baseHeight + itemCount * itemHeight
   })
 
+  const topAnchorSpacerHeight = createMemo(() => {
+    if (!topAnchorId()) return 0
+    return Math.max(0, containerHeight())
+  })
+
   const handleMessageSelect = (message: UserMessage) => {
     const visible = sessionMessages.visibleUserMessages()
     const index = visible.findIndex((m) => m.id === message.id)
@@ -302,8 +405,11 @@ export function SessionPane(props: SessionPaneProps) {
     const isLastMessage = message.id === sessionMessages.lastUserMessage()?.id
     sessionMessages.setActiveMessage(message)
 
+    const container = scrollContainer()
+    const atBottom = container ? container.scrollHeight - container.scrollTop - container.clientHeight < 50 : false
+
     // Skip scrolling if clicking last message while already at bottom
-    if (isLastMessage && isAtBottom()) return
+    if (isLastMessage && atBottom) return
 
     // Scroll to the message element
     requestAnimationFrame(() => {
@@ -321,8 +427,11 @@ export function SessionPane(props: SessionPaneProps) {
       const el = container.querySelector(`[data-message-id="${message.id}"]`) as HTMLElement | null
       if (el) {
         // Use manual scroll instead of scrollIntoView to avoid ancestor scroll shifts
-        container.scrollTop = el.offsetTop
-        setIsAtBottom(container.scrollHeight - container.scrollTop - container.clientHeight < 50)
+        const a = el.getBoundingClientRect()
+        const b = container.getBoundingClientRect()
+        const top = a.top - b.top + container.scrollTop
+        container.scrollTop = top
+        updateIsAtBottom(container)
       }
     })
   }
@@ -372,14 +481,19 @@ export function SessionPane(props: SessionPaneProps) {
             wide={true}
           />
           <div
-            ref={setScrollContainer}
+            ref={setScrollRef}
             class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
             onScroll={(e) => {
+              autoScroll.handleScroll()
               const el = e.target as HTMLElement
-              setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 50)
+              clampTopAnchorScroll(el)
+              updateIsAtBottom(el)
             }}
           >
-            <div class="flex min-h-full flex-col">
+            <div
+              ref={setContentContainer}
+              class="flex min-h-full flex-col"
+            >
               <div class="flex flex-col gap-4 pt-6">
                 <For each={renderedUserMessages()}>
                   {(message) => (
@@ -410,6 +524,9 @@ export function SessionPane(props: SessionPaneProps) {
               {/* Spacer to prevent content from being hidden behind sticky todo footer */}
               <Show when={todoSpacerHeight() > 0}>
                 <div class="shrink-0" style={{ height: `${todoSpacerHeight()}px` }} />
+              </Show>
+              <Show when={topAnchorSpacerHeight() > 0}>
+                <div class="shrink-0" style={{ height: `${topAnchorSpacerHeight()}px` }} />
               </Show>
               {/* Flexible spacer pushes footer to bottom for short content */}
               <div class="flex-1" />

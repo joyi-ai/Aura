@@ -131,7 +131,7 @@ export function HomeContent(props: HomeContentProps) {
   const emptyMarginTop = () => (props.variant === "page" ? "mt-30" : "mt-20")
   const showRelativeTime = createMemo(() => (props.showRelativeTime ?? true) && !props.hideLogo)
   const showThemePicker = createMemo(() => props.variant === "page" && props.showThemePicker === true)
-  const isCompact = createMemo(() => props.variant === "page" && props.hideLogo)
+  const isCompact = createMemo(() => props.hideLogo === true)
   const otherProjects = createMemo(() => {
     const selectedKey = selectedProjectKey()
     return projects().filter((project) => normalizeDirectoryKey(project.worktree) !== selectedKey)

@@ -24,6 +24,7 @@ export function PaneHome(props: PaneHomeProps) {
   const paneDroppable = createDroppable(props.paneId)
   const paneDragHandlers = paneDraggable.dragActivators
 
+  const variant = createMemo(() => (multiPane.panes().length > 1 ? "pane" : "page"))
   const hideLogo = createMemo(() => multiPane.panes().length > 1)
   const showRelativeTime = createMemo(() => multiPane.panes().length <= 1)
   const showThemePicker = createMemo(() => multiPane.panes().length === 1)
@@ -139,6 +140,7 @@ export function PaneHome(props: PaneHomeProps) {
         />
       </Show>
       <HomeScreen
+        variant={variant()}
         selectedProject={props.selectedProject}
         currentWorktree={props.currentWorktree}
         hideLogo={hideLogo()}
