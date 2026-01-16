@@ -3181,6 +3181,35 @@ export type ConfigUpdateResponses = {
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
 
+export type SkillDeleteData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    name: string
+    location: "opencode" | "claude"
+  }
+  url: "/skill"
+}
+
+export type SkillDeleteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SkillDeleteError = SkillDeleteErrors[keyof SkillDeleteErrors]
+
+export type SkillDeleteResponses = {
+  /**
+   * Skill deleted
+   */
+  200: boolean
+}
+
+export type SkillDeleteResponse = SkillDeleteResponses[keyof SkillDeleteResponses]
+
 export type SkillListData = {
   body?: never
   path?: never
@@ -3202,6 +3231,42 @@ export type SkillListResponses = {
 }
 
 export type SkillListResponse = SkillListResponses[keyof SkillListResponses]
+
+export type SkillCreateData = {
+  body?: {
+    name: string
+    description: string
+    content?: string
+    location: "opencode" | "claude"
+  }
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/skill"
+}
+
+export type SkillCreateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SkillCreateError = SkillCreateErrors[keyof SkillCreateErrors]
+
+export type SkillCreateResponses = {
+  /**
+   * Skill created
+   */
+  200: {
+    name: string
+    description: string
+    location: string
+  }
+}
+
+export type SkillCreateResponse = SkillCreateResponses[keyof SkillCreateResponses]
 
 export type ToolIdsData = {
   body?: never

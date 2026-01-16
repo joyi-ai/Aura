@@ -1,10 +1,9 @@
-import { createMemo, createEffect } from "solid-js"
+import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { HomeContent, type HomeContentVariant } from "@/components/home-content"
 import { useLayout } from "@/context/layout"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { showToast } from "@opencode-ai/ui/toast"
-import { usePreferredProject } from "@/hooks/use-preferred-project"
 
 export interface HomeScreenProps {
   variant?: HomeContentVariant
@@ -22,18 +21,9 @@ export interface HomeScreenProps {
 export function HomeScreen(props: HomeScreenProps) {
   const layout = useLayout()
   const globalSDK = useGlobalSDK()
-  const preferredProject = usePreferredProject()
   const [state, setState] = createStore<{ project?: string; worktree?: string }>({
     project: undefined,
     worktree: undefined,
-  })
-
-  createEffect(() => {
-    if (props.selectedProject !== undefined) return
-    if (state.project !== undefined) return
-    const candidate = preferredProject()
-    if (!candidate) return
-    setState("project", candidate)
   })
 
   const effectiveProject = createMemo(() => props.selectedProject ?? state.project)

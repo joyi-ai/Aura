@@ -1,4 +1,6 @@
 import z from "zod"
+import path from "path"
+import fs from "fs/promises"
 import { Config } from "../config/config"
 import { Instance } from "../project/instance"
 import { NamedError } from "@opencode-ai/util/error"
@@ -17,6 +19,34 @@ export namespace Skill {
     location: z.string(),
   })
   export type Info = z.infer<typeof Info>
+
+  const Name = z.string().min(1).refine(
+    (value) => {
+      if (value.includes("\\")) return false
+      const parts = value.split("/")
+      return parts.every((part) => part && part !== "." && part !== "..")
+    },
+    {
+      message: "Skill name must use '/' and cannot contain empty, '.' or '..' segments.",
+    },
+  )
+
+  export const Location = z.enum(["opencode", "claude"])
+  export type Location = z.infer<typeof Location>
+
+  export const Create = z.object({
+    name: Name,
+    description: z.string().min(1),
+    content: z.string().optional(),
+    location: Location,
+  })
+  export type Create = z.infer<typeof Create>
+
+  export const Remove = z.object({
+    name: Name,
+    location: Location,
+  })
+  export type Remove = z.infer<typeof Remove>
 
   export const InvalidError = NamedError.create(
     "SkillInvalidError",
@@ -38,6 +68,15 @@ export namespace Skill {
 
   const OPENCODE_SKILL_GLOB = new Bun.Glob("{skill,skills}/**/SKILL.md")
   const CLAUDE_SKILL_GLOB = new Bun.Glob("skills/**/SKILL.md")
+
+  const baseDir = (location: Location) => {
+    if (location === "opencode") return path.join(Instance.directory, ".opencode", "skill")
+    return path.join(Instance.directory, ".claude", "skills")
+  }
+
+  const skillPath = (location: Location, name: string) => {
+    return path.join(baseDir(location), name, "SKILL.md")
+  }
 
   export const state = Instance.state(async () => {
     const skills: Record<string, Info> = {}
@@ -153,5 +192,34 @@ export namespace Skill {
       if (source === "opencode") return false
       return true
     })
+  }
+
+  export async function create(input: Create) {
+    const file = skillPath(input.location, input.name)
+    const dir = path.dirname(file)
+    await fs.mkdir(dir, { recursive: true })
+    const body = input.content ?? ""
+    const output = [
+      "---",
+      `name: ${JSON.stringify(input.name)}`,
+      `description: ${JSON.stringify(input.description)}`,
+      "---",
+      "",
+      body,
+    ].join("\n")
+    await Bun.write(file, `${output.trimEnd()}\n`)
+    await Instance.dispose()
+    return {
+      name: input.name,
+      description: input.description,
+      location: file,
+    }
+  }
+
+  export async function remove(input: Remove) {
+    const file = skillPath(input.location, input.name)
+    await fs.rm(file, { force: true })
+    await Instance.dispose()
+    return true
   }
 }
