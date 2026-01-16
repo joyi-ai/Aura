@@ -74,6 +74,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           cleanup: "ask" as "ask" | "always" | "never",
         },
         sessionView: {} as Record<string, SessionView>,
+        projectsRecent: {} as Record<string, number>,
       }),
     )
 
@@ -271,6 +272,20 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       return roots().get(key) ?? directory
     }
 
+    function projectKey(directory: string | undefined) {
+      if (!directory) return undefined
+      const root = resolveRoot(directory)
+      const key = normalizeDirectoryKey(root)
+      if (!key) return undefined
+      return { key, root }
+    }
+
+    function touchProject(directory: string) {
+      const entry = projectKey(directory)
+      if (!entry) return
+      setStore("projectsRecent", entry.key, Date.now())
+    }
+
     createEffect(() => {
       const map = roots()
       if (map.size === 0) return
@@ -304,10 +319,32 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       projects: {
         list,
         open(directory: string) {
-          const root = resolveRoot(directory)
-          if (server.projects.list().find((x) => x.worktree === root)) return
+          const entry = projectKey(directory)
+          if (!entry) return
+          touchProject(entry.root)
+          if (server.projects.list().find((x) => normalizeDirectoryKey(x.worktree) === entry.key)) return
+          const root = entry.root
           globalSync.project.loadSessions(root)
           server.projects.open(root)
+        },
+        touch(directory: string) {
+          touchProject(directory)
+        },
+        recent(limit = 5, exclude?: string) {
+          const excludeKey = projectKey(exclude)?.key
+          const entries = list().filter((project) => projectKey(project.worktree)?.key !== excludeKey)
+          if (entries.length === 0) return []
+          const scored = entries.map((project) => {
+            const key = projectKey(project.worktree)?.key
+            const lastUsed = key ? store.projectsRecent[key] ?? 0 : 0
+            return { project, lastUsed }
+          })
+          const hasRecency = scored.some((entry) => entry.lastUsed > 0)
+          const ordered = hasRecency
+            ? scored.sort((a, b) => b.lastUsed - a.lastUsed || a.project.worktree.localeCompare(b.project.worktree))
+            : scored
+          const sliced = limit > 0 ? ordered.slice(0, limit) : ordered
+          return sliced.map((entry) => entry.project)
         },
         close(directory: string) {
           server.projects.close(directory)

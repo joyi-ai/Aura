@@ -285,14 +285,13 @@ function MultiPaneContent(props: MultiPanePageProps) {
   const activeTitle = createMemo(() => getPaneTitle(activePane(), globalSync))
   const activeProject = createMemo(() => getPaneProjectLabel(activePane()))
 
-  const recentProject = createMemo(() => {
-    const sorted = globalSync.data.project.toSorted(
-      (a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created),
-    )
-    return sorted[0]?.worktree
-  })
   const defaultProject = createMemo(() => globalSync.data.path.directory)
-  const getLastProject = () => recentProject() || defaultProject() || layout.projects.list()[0]?.worktree
+  const lastSidebarProject = createMemo(() => {
+    const recent = layout.projects.recent(1)
+    if (recent.length > 0) return recent[0].worktree
+    return layout.projects.list()[0]?.worktree
+  })
+  const getLastProject = () => lastSidebarProject() || defaultProject()
 
   const resolveProjectDirectory = (directory: string | undefined) => {
     if (!directory) return { directory: undefined, worktree: undefined }
@@ -307,6 +306,18 @@ function MultiPaneContent(props: MultiPanePageProps) {
     const isRoot = rootKey === normalized
     return { directory: project.worktree, worktree: isRoot ? undefined : directory }
   }
+
+  const focusedProject = createMemo(() => multiPane.focusedPane()?.directory)
+  createEffect(
+    on(
+      () => focusedProject(),
+      (directory) => {
+        if (!directory) return
+        layout.projects.open(directory)
+      },
+      { defer: true },
+    ),
+  )
 
   createEffect(() => {
     const panes = multiPane.panes()

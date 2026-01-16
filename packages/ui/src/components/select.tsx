@@ -13,6 +13,7 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   triggerLabel?: (x: T) => string
   groupBy?: (x: T) => string
   onSelect?: (value: T | undefined) => void
+  allowDuplicateSelectionEvents?: boolean
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   itemRenderer?: (item: T | undefined) => JSX.Element
@@ -32,10 +33,12 @@ export function Select<T>(props: SelectProps<T> & ButtonProps) {
     "triggerLabel",
     "groupBy",
     "onSelect",
+    "allowDuplicateSelectionEvents",
     "itemRenderer",
     "icon",
     "hideIndicator",
   ])
+  const allowDuplicateSelectionEvents = local.allowDuplicateSelectionEvents ?? true
   const grouped = createMemo(() => {
     const result = pipe(
       local.options,
@@ -86,7 +89,15 @@ export function Select<T>(props: SelectProps<T> & ButtonProps) {
         </Kobalte.Item>
       )}
       onChange={(v) => {
-        local.onSelect?.(v ?? undefined)
+        const next = v ?? undefined
+        if (!allowDuplicateSelectionEvents) {
+          const getValue = (item: T | undefined) => {
+            if (!item) return undefined
+            return local.value ? local.value(item) : (item as string)
+          }
+          if (getValue(next) === getValue(local.current)) return
+        }
+        local.onSelect?.(next)
       }}
     >
       <Kobalte.Trigger

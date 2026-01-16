@@ -8,6 +8,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useGlobalSync } from "@/context/global-sync"
+import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
@@ -35,6 +36,7 @@ export interface HomeContentProps {
 
 export function HomeContent(props: HomeContentProps) {
   const sync = useGlobalSync()
+  const layout = useLayout()
   const platform = usePlatform()
   const dialog = useDialog()
   const server = useServer()
@@ -46,21 +48,19 @@ export function HomeContent(props: HomeContentProps) {
   const [deletingWorktrees, setDeletingWorktrees] = createSignal<Set<string>>(new Set())
   const [deletedWorktrees, setDeletedWorktrees] = createSignal<Set<string>>(new Set())
 
-  // For page variant, auto-select most recent project
-  const mostRecentProject = createMemo(() => {
-    const sorted = sync.data.project.toSorted(
-      (a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created),
-    )
-    return sorted[0]?.worktree
-  })
   const defaultProject = createMemo(() => sync.data.path.directory)
+  const primarySidebarProject = createMemo(() => {
+    const recent = layout.projects.recent(1)
+    if (recent.length > 0) return recent[0].worktree
+    return layout.projects.list()[0]?.worktree
+  })
 
   // Track selected project (auto-selects most recent on page variant)
   const selectedProject = createMemo(() => {
     if (props.selectedProject !== undefined) return props.selectedProject
     const internal = internalSelected()
     if (internal) return internal
-    if (props.variant === "page") return mostRecentProject() || defaultProject()
+    if (props.variant === "page") return primarySidebarProject() || defaultProject()
     return undefined
   })
   const selectedProjectKey = createMemo(() => normalizeDirectoryKey(selectedProject()))
@@ -99,11 +99,7 @@ export function HomeContent(props: HomeContentProps) {
     dialog.show(() => <DialogSelectServer />)
   }
 
-  const projects = createMemo(() =>
-    sync.data.project
-      .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, 5),
-  )
+  const projects = createMemo(() => layout.projects.list())
 
   // Find the selected project in sync data (if it exists)
   const selectedProjectData = createMemo(() => {
@@ -116,13 +112,12 @@ export function HomeContent(props: HomeContentProps) {
     })
   })
 
-  // Recent projects: exclude selected, limit to 4
+  // Recent projects: exclude selected, limit to 5 (sidebar-based ordering)
   const recentProjects = createMemo(() => {
     const selectedKey = selectedProjectKey()
-    return sync.data.project
-      .filter((project) => normalizeDirectoryKey(project.worktree) !== selectedKey)
-      .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, 4)
+    const entries = projects().filter((project) => normalizeDirectoryKey(project.worktree) !== selectedKey)
+    if (projects().length <= 5) return entries
+    return layout.projects.recent(5, selectedProject())
   })
 
   const maxWidth = () => (props.variant === "page" ? "max-w-xl" : "max-w-md")

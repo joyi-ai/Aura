@@ -70,6 +70,7 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
             onSelect={navigateToProject}
             class="text-12-regular text-text-base"
             variant="ghost"
+            allowDuplicateSelectionEvents={false}
           />
           <div class="text-text-weaker text-12-regular">/</div>
           <Select

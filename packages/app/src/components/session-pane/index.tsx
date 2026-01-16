@@ -214,7 +214,16 @@ export function SessionPane(props: SessionPaneProps) {
   const [isAtBottom, setIsAtBottom] = createSignal(true)
   const [containerHeight, setContainerHeight] = createSignal(0)
   const [topAnchorId, setTopAnchorId] = createSignal<string | undefined>(undefined)
+  const [topAnchorLocked, setTopAnchorLocked] = createSignal(false)
+  const [topAnchorSetAt, setTopAnchorSetAt] = createSignal(0)
+  const [contentEndMarker, setContentEndMarker] = createSignal<HTMLDivElement>()
+  const [contentEndOffset, setContentEndOffset] = createSignal(0)
+  const [skipNextTopAnchor, setSkipNextTopAnchor] = createSignal(false)
   const topAnchorGap = 16
+  const topAnchorLockTolerance = 2
+  const topAnchorUnlockTolerance = 8
+  const topAnchorSettleMs = 800
+  let topAnchorUserIntent = false
   const autoScroll = createAutoScroll({
     working: isAtBottom,
   })
@@ -229,6 +238,12 @@ export function SessionPane(props: SessionPaneProps) {
     setContainerHeight(el?.clientHeight ?? 0)
   }
 
+  const getElementOffsetTop = (el: HTMLElement, container: HTMLElement) => {
+    const a = el.getBoundingClientRect()
+    const b = container.getBoundingClientRect()
+    return a.top - b.top + container.scrollTop
+  }
+
   const getMessageOffsetTop = (messageId: string, container: HTMLElement) => {
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
@@ -236,28 +251,64 @@ export function SessionPane(props: SessionPaneProps) {
         : messageId.replaceAll('"', '\\"')
     const el = container.querySelector(`[data-message-id="${escaped}"]`) as HTMLElement | null
     if (!el) return
-    const a = el.getBoundingClientRect()
-    const b = container.getBoundingClientRect()
-    return a.top - b.top + container.scrollTop
+    return getElementOffsetTop(el, container)
+  }
+
+  const getTopAnchorTarget = (messageId: string, container: HTMLElement) => {
+    const offsetTop = getMessageOffsetTop(messageId, container)
+    if (offsetTop === undefined) return
+    return Math.max(0, offsetTop - topAnchorGap)
+  }
+
+  const updateContentEndOffset = () => {
+    const container = scrollContainer()
+    const marker = contentEndMarker()
+    if (!container || !marker) return
+    const top = getElementOffsetTop(marker, container)
+    setContentEndOffset(top + marker.offsetHeight)
   }
 
   const scrollToMessageTop = (messageId: string, behavior: ScrollBehavior = "auto") => {
     const container = scrollContainer()
     if (!container) return
-    const offsetTop = getMessageOffsetTop(messageId, container)
-    if (offsetTop === undefined) return
-    const top = Math.max(0, offsetTop - topAnchorGap)
+    const top = getTopAnchorTarget(messageId, container)
+    if (top === undefined) return
     container.scrollTo({ top, behavior })
     updateIsAtBottom(container)
   }
 
-  const clampTopAnchorScroll = (container: HTMLElement) => {
+  const updateTopAnchorLock = (container: HTMLElement) => {
     const anchorId = topAnchorId()
     if (!anchorId) return
-    const offsetTop = getMessageOffsetTop(anchorId, container)
-    if (offsetTop === undefined) return
-    const maxRealScrollTop = Math.max(0, container.scrollHeight - topAnchorSpacerHeight() - container.clientHeight)
-    const targetTop = Math.max(0, offsetTop - topAnchorGap)
+    const targetTop = getTopAnchorTarget(anchorId, container)
+    if (targetTop === undefined) return
+
+    const delta = Math.abs(container.scrollTop - targetTop)
+    if (delta <= topAnchorLockTolerance) {
+      if (!topAnchorLocked()) {
+        setTopAnchorLocked(true)
+        setTopAnchorSetAt(Date.now())
+      }
+      topAnchorUserIntent = false
+      return
+    }
+
+    const setAt = topAnchorSetAt()
+    const allowPassiveUnlock = setAt === 0 || Date.now() - setAt > topAnchorSettleMs
+    if (topAnchorLocked() && delta > topAnchorUnlockTolerance && (topAnchorUserIntent || allowPassiveUnlock)) {
+      setTopAnchorLocked(false)
+      setTopAnchorSetAt(0)
+      topAnchorUserIntent = false
+    }
+  }
+
+  const clampTopAnchorScroll = (container: HTMLElement) => {
+    if (!topAnchorLocked()) return
+    const anchorId = topAnchorId()
+    if (!anchorId) return
+    const targetTop = getTopAnchorTarget(anchorId, container)
+    if (targetTop === undefined) return
+    const maxRealScrollTop = Math.max(0, contentEndOffset() - container.clientHeight)
     const maxAllowed = Math.max(maxRealScrollTop, targetTop)
     if (container.scrollTop > maxAllowed) {
       container.scrollTop = maxAllowed
@@ -267,10 +318,39 @@ export function SessionPane(props: SessionPaneProps) {
   createEffect(() => {
     const container = scrollContainer()
     if (!container) return
+    const markUserIntent = () => {
+      topAnchorUserIntent = true
+    }
+    container.addEventListener("wheel", markUserIntent, { passive: true })
+    container.addEventListener("pointerdown", markUserIntent)
+    container.addEventListener("touchstart", markUserIntent, { passive: true })
+    return () => {
+      container.removeEventListener("wheel", markUserIntent)
+      container.removeEventListener("pointerdown", markUserIntent)
+      container.removeEventListener("touchstart", markUserIntent)
+    }
+  })
+
+  createEffect(() => {
+    const container = scrollContainer()
+    if (!container) return
     const observer = new ResizeObserver(() => {
       setContainerHeight(container.clientHeight)
-      if (!isAtBottom()) return
-      autoScroll.forceScrollToBottom()
+      updateContentEndOffset()
+      updateTopAnchorLock(container)
+      const anchorId = topAnchorId()
+      if (anchorId && topAnchorLocked()) {
+        const targetTop = getTopAnchorTarget(anchorId, container)
+        const isAnchored = targetTop !== undefined && Math.abs(container.scrollTop - targetTop) < 2
+        if (isAnchored) {
+          requestAnimationFrame(() => {
+            scrollToMessageTop(anchorId, "auto")
+          })
+          return
+        }
+      }
+      clampTopAnchorScroll(container)
+      updateIsAtBottom(container)
     })
     observer.observe(container)
     return () => observer.disconnect()
@@ -281,6 +361,8 @@ export function SessionPane(props: SessionPaneProps) {
     const content = contentContainer()
     if (!container || !content) return
     const observer = new ResizeObserver(() => {
+      updateContentEndOffset()
+      updateTopAnchorLock(container)
       clampTopAnchorScroll(container)
       updateIsAtBottom(container)
     })
@@ -294,21 +376,38 @@ export function SessionPane(props: SessionPaneProps) {
       (id, prevId) => {
         if (!id) {
           setTopAnchorId(undefined)
+          setTopAnchorLocked(false)
+          setTopAnchorSetAt(0)
+          topAnchorUserIntent = false
           return
+        }
+        if (skipNextTopAnchor()) {
+          const createdAt = sessionMessages.lastUserMessage()?.time?.created
+          const isRecent = typeof createdAt === "number" && Date.now() - createdAt < 2000
+          setSkipNextTopAnchor(false)
+          if (!isRecent) return
         }
         if (!prevId) {
           if (sessionMessages.visibleUserMessages().length !== 1) return
           setTopAnchorId(id)
+          setTopAnchorLocked(true)
+          setTopAnchorSetAt(Date.now())
+          topAnchorUserIntent = false
           setIsAtBottom(false)
           requestAnimationFrame(() => {
+            updateContentEndOffset()
             scrollToMessageTop(id, "smooth")
           })
           return
         }
         if (id <= prevId) return
         setTopAnchorId(id)
+        setTopAnchorLocked(true)
+        setTopAnchorSetAt(Date.now())
+        topAnchorUserIntent = false
         setIsAtBottom(false)
         requestAnimationFrame(() => {
+          updateContentEndOffset()
           scrollToMessageTop(id, "smooth")
         })
       },
@@ -321,6 +420,10 @@ export function SessionPane(props: SessionPaneProps) {
       () => sessionId(),
       () => {
         setTopAnchorId(undefined)
+        setTopAnchorLocked(false)
+        setTopAnchorSetAt(0)
+        topAnchorUserIntent = false
+        setSkipNextTopAnchor(true)
       },
     ),
   )
@@ -391,11 +494,21 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const topAnchorSpacerHeight = createMemo(() => {
-    if (!topAnchorId()) return 0
-    return Math.max(0, containerHeight())
+    const anchorId = topAnchorId()
+    if (!topAnchorLocked()) return 0
+    const container = scrollContainer()
+    if (!anchorId || !container) return 0
+    const targetTop = getTopAnchorTarget(anchorId, container)
+    if (targetTop === undefined) return 0
+    const needed = targetTop + containerHeight() - contentEndOffset()
+    return Math.max(0, Math.ceil(needed))
   })
 
   const handleMessageSelect = (message: UserMessage) => {
+    setTopAnchorLocked(false)
+    setTopAnchorId(undefined)
+    setTopAnchorSetAt(0)
+    topAnchorUserIntent = false
     const visible = sessionMessages.visibleUserMessages()
     const index = visible.findIndex((m) => m.id === message.id)
     const needed = index === -1 ? 0 : visible.length - index
@@ -486,6 +599,7 @@ export function SessionPane(props: SessionPaneProps) {
             onScroll={(e) => {
               autoScroll.handleScroll()
               const el = e.target as HTMLElement
+              updateTopAnchorLock(el)
               clampTopAnchorScroll(el)
               updateIsAtBottom(el)
             }}
@@ -525,6 +639,7 @@ export function SessionPane(props: SessionPaneProps) {
               <Show when={todoSpacerHeight() > 0}>
                 <div class="shrink-0" style={{ height: `${todoSpacerHeight()}px` }} />
               </Show>
+              <div ref={setContentEndMarker} class="shrink-0" />
               <Show when={topAnchorSpacerHeight() > 0}>
                 <div class="shrink-0" style={{ height: `${topAnchorSpacerHeight()}px` }} />
               </Show>

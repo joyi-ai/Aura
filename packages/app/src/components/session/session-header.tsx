@@ -87,6 +87,7 @@ export function SessionHeader() {
                 onSelect={(x) => (x ? navigateToProject(x) : undefined)}
                 class="text-14-regular text-text-base"
                 variant="ghost"
+                allowDuplicateSelectionEvents={false}
               />
               <div class="text-text-weaker">/</div>
             </div>
