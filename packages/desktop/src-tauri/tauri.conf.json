@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OpenPoo Dev",
-  "identifier": "ai.openpoo.desktop.dev",
-  "mainBinaryName": "OpenPoo",
+  "productName": "Aura Dev",
+  "identifier": "ai.Aura.desktop.dev",
+  "mainBinaryName": "Aura",
   "version": "../package.json",
   "build": {
     "beforeDevCommand": "bun run dev",

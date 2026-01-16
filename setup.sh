@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# OpenPoo Desktop App Setup Script
+# Aura Desktop App Setup Script
 # Works on macOS and Linux
 #
 # Usage: ./setup.sh
@@ -140,7 +140,7 @@ install_deps() {
 main() {
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║           OpenPoo Desktop App Setup                      ║"
+    echo "║           Aura Desktop App Setup                      ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -186,7 +186,7 @@ main() {
     install_deps
 
     echo ""
-    print_step "Launching OpenPoo Desktop App..."
+    print_step "Launching Aura Desktop App..."
     echo ""
 
     # Run tauri dev from the desktop package

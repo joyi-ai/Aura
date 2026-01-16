@@ -31,7 +31,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: github.repository == 'joyi-ai/openpoo'
+    if: github.repository == 'joyi-ai/Aura'
     steps:
       - uses: actions/checkout@v3
         with:

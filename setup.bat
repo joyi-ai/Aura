@@ -1,12 +1,12 @@
 @echo off
-REM OpenPoo Desktop App Setup Script (Windows)
+REM Aura Desktop App Setup Script (Windows)
 REM This is a wrapper that calls the PowerShell script
 REM
 REM Usage: setup.bat
 REM
 
 echo.
-echo Starting OpenPoo Desktop App Setup...
+echo Starting Aura Desktop App Setup...
 echo.
 
 REM Check if PowerShell is available

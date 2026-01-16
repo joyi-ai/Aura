@@ -80,7 +80,7 @@ export function StepProvider() {
         <Kobalte.Portal>
           <Kobalte.Overlay data-component="dialog-overlay" />
           <Dialog
-            title="Welcome to OpenPoo"
+            title="Welcome to Aura"
             description="Select your AI provider to get started"
             class="onboarding-provider-dialog"
           >

@@ -398,7 +398,7 @@ jobs:
           persist-credentials: false
 
       - name: Run opencode
-        uses: joyi-ai/openpoo/github@latest${envStr}
+        uses: joyi-ai/Aura/github@latest${envStr}
         with:
           model: ${provider}/${model}`,
             )

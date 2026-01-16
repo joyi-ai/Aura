@@ -1,9 +1,8 @@
-# OpenPoo
+# Aura
 
-A fork of OpenCode with significant UI/UX changes focused on the desktop app.
+Desktop App for Claude Code, Codex, and Opencode.
 
-![OpenPoo Screenshot](assets/screenshot.png)
-![OpenPoo Project Selector](assets/screenshot2.png)
+<video src="https://github.com/user-attachments/assets/1b9bba6b-dfd0-4fb1-b048-90991851a743" autoplay loop muted playsinline></video>
 
 ## Key Differences
 

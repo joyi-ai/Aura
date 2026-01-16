@@ -2,26 +2,26 @@ import { APIEvent } from "@solidjs/start"
 import { DownloadPlatform } from "./types"
 
 const assetNames: Record<string, string> = {
-  "darwin-aarch64-dmg": "openpoo-desktop-darwin-aarch64.dmg",
-  "darwin-x64-dmg": "openpoo-desktop-darwin-x64.dmg",
-  "windows-x64-nsis": "openpoo-desktop-windows-x64.exe",
-  "linux-x64-deb": "openpoo-desktop-linux-amd64.deb",
-  "linux-x64-appimage": "openpoo-desktop-linux-amd64.AppImage",
-  "linux-x64-rpm": "openpoo-desktop-linux-x86_64.rpm",
+  "darwin-aarch64-dmg": "Aura-desktop-darwin-aarch64.dmg",
+  "darwin-x64-dmg": "Aura-desktop-darwin-x64.dmg",
+  "windows-x64-nsis": "Aura-desktop-windows-x64.exe",
+  "linux-x64-deb": "Aura-desktop-linux-amd64.deb",
+  "linux-x64-appimage": "Aura-desktop-linux-amd64.AppImage",
+  "linux-x64-rpm": "Aura-desktop-linux-x86_64.rpm",
 } satisfies Record<DownloadPlatform, string>
 
 // Doing this on the server lets us preserve the original name for platforms we don't care to rename for
 const downloadNames: Record<string, string> = {
-  "darwin-aarch64-dmg": "OpenPoo Desktop.dmg",
-  "darwin-x64-dmg": "OpenPoo Desktop.dmg",
-  "windows-x64-nsis": "OpenPoo Desktop Installer.exe",
+  "darwin-aarch64-dmg": "Aura Desktop.dmg",
+  "darwin-x64-dmg": "Aura Desktop.dmg",
+  "windows-x64-nsis": "Aura Desktop Installer.exe",
 } satisfies { [K in DownloadPlatform]?: string }
 
 export async function GET({ params: { platform } }: APIEvent) {
   const assetName = assetNames[platform]
   if (!assetName) return new Response("Not Found", { status: 404 })
 
-  const resp = await fetch(`https://github.com/joyi-ai/openpoo/releases/latest/download/${assetName}`, {
+  const resp = await fetch(`https://github.com/joyi-ai/Aura/releases/latest/download/${assetName}`, {
     cf: {
       // in case gh releases has rate limits
       cacheTtl: 60 * 5,

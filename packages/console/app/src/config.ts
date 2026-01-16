@@ -7,7 +7,7 @@ export const config = {
 
   // GitHub
   github: {
-    repoUrl: "https://github.com/joyi-ai/openpoo",
+    repoUrl: "https://github.com/joyi-ai/Aura",
     starsFormatted: {
       compact: "60K",
       full: "60,000",

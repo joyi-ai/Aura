@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    OpenPoo Desktop App Setup Script for Windows
+    Aura Desktop App Setup Script for Windows
 
 .DESCRIPTION
     This script checks for prerequisites (Bun, Rust), installs dependencies,
-    and launches the OpenPoo desktop application.
+    and launches the Aura desktop application.
 
 .EXAMPLE
     .\setup.ps1
@@ -129,7 +129,7 @@ function Install-Dependencies {
 function Main {
     Write-Host ""
     Write-Host "=======================================================" -ForegroundColor Cyan
-    Write-Host "         OpenPoo Desktop App Setup (Windows)           " -ForegroundColor Cyan
+    Write-Host "         Aura Desktop App Setup (Windows)           " -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     Write-Host ""
 
@@ -194,7 +194,7 @@ function Main {
     Install-Dependencies
 
     Write-Host ""
-    Write-Step "Launching OpenPoo Desktop App..."
+    Write-Step "Launching Aura Desktop App..."
     Write-Host ""
 
     # Run tauri dev from the desktop package

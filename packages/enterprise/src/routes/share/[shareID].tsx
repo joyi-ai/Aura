@@ -328,7 +328,7 @@ export default function () {
                               <div class="flex gap-3 items-center">
                                 <IconButton
                                   as={"a"}
-                                  href="https://github.com/joyi-ai/openpoo"
+                                  href="https://github.com/joyi-ai/Aura"
                                   target="_blank"
                                   icon="github"
                                   variant="ghost"
