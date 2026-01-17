@@ -121,18 +121,26 @@ export function useMessageActions() {
       })
       return
     }
-    const reverted = await sdk.client.session
+    const revertResponse = await sdk.client.session
       .revert({ sessionID: message.sessionID, messageID: message.id })
-      .then(() => true)
       .catch((e) => {
         showToast({
           variant: "error",
           title: "Failed to retry message",
           description: e.message ?? "Please try again.",
         })
-        return false
+        return undefined
       })
-    if (!reverted) return
+    if (!revertResponse?.data) {
+      if (revertResponse?.error) {
+        showToast({
+          variant: "error",
+          title: "Failed to retry message",
+          description: (revertResponse.error as any)?.message ?? "Please try again.",
+        })
+      }
+      return
+    }
     const messageID = Identifier.ascending("message")
     const optimistic = promptParts.map((part) => ({
       ...part,
@@ -189,18 +197,26 @@ export function useMessageActions() {
       return
     }
 
-    const reverted = await sdk.client.session
+    const revertResponse = await sdk.client.session
       .revert({ sessionID: message.sessionID, messageID: message.id })
-      .then(() => true)
       .catch((e) => {
         showToast({
           variant: "error",
           title: "Failed to restore checkpoint",
           description: e.message ?? "Please try again.",
         })
-        return false
+        return undefined
       })
-    if (!reverted) return
+    if (!revertResponse?.data) {
+      if (revertResponse?.error) {
+        showToast({
+          variant: "error",
+          title: "Failed to restore checkpoint",
+          description: (revertResponse.error as any)?.message ?? "Please try again.",
+        })
+      }
+      return
+    }
 
     showToast({
       title: "Checkpoint restored",
@@ -212,18 +228,26 @@ export function useMessageActions() {
     if (!isUserMessage(message)) return
     await abortIfBusy(message.sessionID)
     prompt.action.clear()
-    const reverted = await sdk.client.session
+    const response = await sdk.client.session
       .revert({ sessionID: message.sessionID, messageID: message.id })
-      .then(() => true)
       .catch((e) => {
         showToast({
           variant: "error",
           title: "Failed to delete message",
           description: e.message ?? "Please try again.",
         })
-        return false
+        return undefined
       })
-    if (!reverted) return
+    if (!response?.data) {
+      if (response?.error) {
+        showToast({
+          variant: "error",
+          title: "Failed to delete message",
+          description: (response.error as any)?.message ?? "Please try again.",
+        })
+      }
+      return
+    }
     const { providerID, modelID } = message.model
     await sdk.client.session.summarize({ sessionID: message.sessionID, providerID, modelID }).catch((e) => {
       showToast({
