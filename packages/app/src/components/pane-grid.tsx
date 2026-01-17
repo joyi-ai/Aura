@@ -25,6 +25,7 @@ export function PaneGrid(props: PaneGridProps) {
   const paneBodyRefs = new Map<string, HTMLDivElement>()
   const paneAnimations = new Map<string, Animation>()
   const maximizeAnimations = new Map<string, Animation>()
+  const scrollCache = new Map<string, { node: HTMLElement; top: number }>()
   let previousRects = new Map<string, DOMRect>()
   let disposed = false
   let resizeCleanup: (() => void) | null = null
@@ -70,6 +71,7 @@ export function PaneGrid(props: PaneGridProps) {
     paneBodyRefs.clear()
     paneAnimations.clear()
     maximizeAnimations.clear()
+    scrollCache.clear()
     previousRects.clear()
   })
 
@@ -115,6 +117,18 @@ export function PaneGrid(props: PaneGridProps) {
     }
   }
 
+  function captureScroll(id: string, body: HTMLElement) {
+    const node = body.querySelector('[data-scroll-container="session-pane"]') as HTMLElement | null
+    if (!node) return
+    scrollCache.set(id, { node, top: node.scrollTop })
+  }
+
+  function restoreScroll(id: string) {
+    const entry = scrollCache.get(id)
+    if (!entry) return
+    entry.node.scrollTop = entry.top
+  }
+
   function animateMaximizedPane(id: string, direction: "expand" | "collapse") {
     if (!containerRef) return
     if (!overlayRef) return
@@ -145,7 +159,9 @@ export function PaneGrid(props: PaneGridProps) {
     paneAnimations.get(id)?.cancel()
     paneAnimations.delete(id)
 
+    captureScroll(id, body)
     overlayRef.appendChild(body)
+    restoreScroll(id)
 
     body.style.position = "absolute"
     body.style.left = `${from.left}px`
@@ -181,12 +197,14 @@ export function PaneGrid(props: PaneGridProps) {
         body.style.contain = ""
         if (direction === "collapse") {
           restorePaneBody(id)
+          restoreScroll(id)
           return
         }
         body.style.left = `${to.left}px`
         body.style.top = `${to.top}px`
         body.style.width = `${to.width}px`
         body.style.height = `${to.height}px`
+        restoreScroll(id)
       },
       () => {
         body.style.contain = ""
@@ -252,6 +270,7 @@ export function PaneGrid(props: PaneGridProps) {
         }
         paneBodyRefs.delete(id)
         paneRefs.delete(id)
+        scrollCache.delete(id)
       }
       pendingFrame = requestAnimationFrame(() => {
         pendingFrame = undefined
@@ -275,6 +294,7 @@ export function PaneGrid(props: PaneGridProps) {
         }
         paneBodyRefs.delete(id)
         paneRefs.delete(id)
+        scrollCache.delete(id)
       }
     }
 

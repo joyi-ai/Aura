@@ -785,6 +785,7 @@ export function SessionPane(props: SessionPaneProps) {
           />
           <div
             ref={setScrollRef}
+            data-scroll-container="session-pane"
             class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
             classList={{ invisible: initialScrollPending() }}
             onScroll={(e) => {

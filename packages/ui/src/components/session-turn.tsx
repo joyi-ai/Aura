@@ -756,23 +756,57 @@ export function SessionTurn(
 
   const hasReasoning = createMemo(() => reasoningTargets().length > 0)
 
-  const reasoning = createMemo(() => {
-    const texts: string[] = []
+  const latestReasoningPart = createMemo(() => {
+    let latest: ReasoningPart | undefined
     for (const msg of assistantMessages()) {
       const msgParts = data.store.part[msg.id] ?? emptyParts
       for (const part of msgParts) {
         if (!part) continue
         if (part.type !== "reasoning") continue
-        const text = (part as ReasoningPart).text ?? ""
-        if (!text.trim()) continue
-        texts.push(text)
+        const rp = part as ReasoningPart
+        if (!rp.text?.trim()) continue
+        latest = rp
       }
     }
-    if (texts.length === 0) return
-    const full = texts.join("\n").replace(/\r\n/g, "\n").trim()
-    if (!full) return
-    return full
+    return latest
   })
+
+  const reasoning = createMemo(() => {
+    const part = latestReasoningPart()
+    if (!part) return
+    const text = part.text.replace(/\r\n/g, "\n").trim()
+    if (!text) return
+    return text
+  })
+
+  const reasoningStreaming = createMemo(() => {
+    const part = latestReasoningPart()
+    if (!part) return false
+    return part.time.end === undefined
+  })
+
+  const reasoningPartId = createMemo(() => latestReasoningPart()?.id)
+
+  let prevReasoningId: string | undefined
+  const [reasoningAnimating, setReasoningAnimating] = createSignal(false)
+
+  createEffect(
+    on(reasoningPartId, (id) => {
+      if (prevReasoningId && id && prevReasoningId !== id) {
+        setReasoningAnimating(true)
+        setTimeout(() => setReasoningAnimating(false), 300)
+      }
+      prevReasoningId = id
+    }),
+  )
+
+  createEffect(
+    on(reasoning, () => {
+      const el = store.reasoningRef
+      if (!el) return
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    }),
+  )
 
   const reasoningMissing = createMemo(() => hasReasoning() && !reasoning())
 
@@ -794,13 +828,6 @@ export function SessionTurn(
     setStore("reasoningLoading", false)
   })
 
-  createEffect(
-    on(reasoning, () => {
-      const el = store.reasoningRef
-      if (!el) return
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-    }),
-  )
 
   const commentary = createMemo(() => {
     if (stepsToolParts().length === 0) return
@@ -1266,6 +1293,8 @@ export function SessionTurn(
                                       <div
                                         ref={(el) => setStore("reasoningRef", el)}
                                         data-slot="session-turn-reasoning"
+                                        data-streaming={reasoningStreaming()}
+                                        data-animating={reasoningAnimating()}
                                       >
                                         {text()}
                                       </div>
