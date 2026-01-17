@@ -11,12 +11,11 @@ import { showToast } from "@opencode-ai/ui/toast"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import { DialogEditMcp, DialogRemoveMcp, isMcpConfigured, type McpConfigured } from "./dialog-edit-mcp"
 
-export const McpPanel: Component<{ showHeader?: boolean }> = (props) => {
+export const DialogSelectMcp: Component = () => {
   const sync = useSync()
   const sdk = useSDK()
   const dialog = useDialog()
   const [loading, setLoading] = createSignal<string | null>(null)
-  const showHeader = () => props.showHeader ?? true
 
   type McpEntry = NonNullable<Config["mcp"]>[string]
   const configs = createMemo(() => sync.data.config.mcp ?? {})
@@ -107,20 +106,13 @@ export const McpPanel: Component<{ showHeader?: boolean }> = (props) => {
   }
 
   return (
-    <div class="flex flex-col gap-2 px-2.5 pb-3">
-      <Show when={showHeader()}>
-        <div class="flex items-center justify-between">
-          <div class="flex flex-col gap-0.5">
-            <div class="text-12-regular text-text-weak">Synced to OpenCode, Claude Code, and Codex</div>
-            <div class="text-11-regular text-text-weaker">
-              {enabledCount()} of {totalCount()} enabled
-            </div>
-          </div>
-          <Button size="small" icon="plus" onClick={() => showEdit()}>
-            Add MCP
-          </Button>
-        </div>
-      </Show>
+    <Dialog title="MCPs" description={`${enabledCount()} of ${totalCount()} enabled`}>
+      <div class="flex items-center justify-between px-2.5 pb-2">
+        <div class="text-12-regular text-text-weak">Synced to OpenCode, Claude Code, and Codex</div>
+        <Button size="small" icon="plus" onClick={() => showEdit()}>
+          Add MCP
+        </Button>
+      </div>
       <List
         search={{ placeholder: "Search", autofocus: true }}
         emptyMessage="No MCPs configured"
@@ -188,14 +180,6 @@ export const McpPanel: Component<{ showHeader?: boolean }> = (props) => {
           )
         }}
       </List>
-    </div>
-  )
-}
-
-export const DialogSelectMcp: Component = () => {
-  return (
-    <Dialog title="MCPs" description="Configure MCP servers for OpenCode, Claude Code, and Codex.">
-      <McpPanel />
     </Dialog>
   )
 }

@@ -168,10 +168,6 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
-  SkillCreateErrors,
-  SkillCreateResponses,
-  SkillDeleteErrors,
-  SkillDeleteResponses,
   SkillListResponses,
   SubtaskPartInput,
   TextPartInput,
@@ -1256,38 +1252,6 @@ export class Config extends HeyApiClient {
 
 export class Skill extends HeyApiClient {
   /**
-   * Delete skill
-   *
-   * Delete a skill from the selected location.
-   */
-  public delete<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      name: string
-      location: "opencode" | "claude"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "name" },
-            { in: "query", key: "location" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<SkillDeleteResponses, SkillDeleteErrors, ThrowOnError>({
-      url: "/skill",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
    * List skills
    *
    * Get a list of all available skills from project and global directories.
@@ -1303,47 +1267,6 @@ export class Skill extends HeyApiClient {
       url: "/skill",
       ...options,
       ...params,
-    })
-  }
-
-  /**
-   * Create skill
-   *
-   * Create a new skill in the selected location.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      name?: string
-      description?: string
-      content?: string
-      location?: "opencode" | "claude"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "body", key: "name" },
-            { in: "body", key: "description" },
-            { in: "body", key: "content" },
-            { in: "body", key: "location" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SkillCreateResponses, SkillCreateErrors, ThrowOnError>({
-      url: "/skill",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
     })
   }
 }

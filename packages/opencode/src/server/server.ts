@@ -775,55 +775,6 @@ export namespace Server {
             return c.json(await Skill.all())
           },
         )
-        .post(
-          "/skill",
-          describeRoute({
-            summary: "Create skill",
-            description: "Create a new skill in the selected location.",
-            operationId: "skill.create",
-            responses: {
-              200: {
-                description: "Skill created",
-                content: {
-                  "application/json": {
-                    schema: resolver(Skill.Info),
-                  },
-                },
-              },
-              ...errors(400),
-            },
-          }),
-          validator("json", Skill.Create),
-          async (c) => {
-            const input = c.req.valid("json")
-            const skill = await Skill.create(input)
-            return c.json(skill)
-          },
-        )
-        .delete(
-          "/skill",
-          describeRoute({
-            summary: "Delete skill",
-            description: "Delete a skill from the selected location.",
-            operationId: "skill.delete",
-            responses: {
-              200: {
-                description: "Skill deleted",
-                content: {
-                  "application/json": {
-                    schema: resolver(z.boolean()),
-                  },
-                },
-              },
-              ...errors(400),
-            },
-          }),
-          validator("query", Skill.Remove),
-          async (c) => {
-            const input = c.req.valid("query")
-            return c.json(await Skill.remove(input))
-          },
-        )
 
         .get(
           "/experimental/tool/ids",
