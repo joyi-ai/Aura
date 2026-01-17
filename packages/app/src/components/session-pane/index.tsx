@@ -63,6 +63,7 @@ export function SessionPane(props: SessionPaneProps) {
     turnLimit: 30,
     loadingMore: false,
   })
+  const [initialScrollPending, setInitialScrollPending] = createSignal(false)
 
   const sessionId = createMemo(() => props.sessionId)
   const projectDirectory = createMemo(() => props.projectDirectory ?? props.directory)
@@ -96,6 +97,14 @@ export function SessionPane(props: SessionPaneProps) {
   // Session messages hook
   const sessionMessages = useSessionMessages({
     sessionId,
+  })
+
+  const sessionMessageCount = createMemo(() => {
+    const id = sessionId()
+    if (!id) return undefined
+    const items = sync.data.message[id]
+    if (!items) return undefined
+    return items.length
   })
 
   const renderedUserMessages = createMemo(() => {
@@ -184,8 +193,13 @@ export function SessionPane(props: SessionPaneProps) {
     on(
       () => sessionId(),
       (id) => {
-        if (!id) return
+        if (!id) {
+          setInitialScrollPending(false)
+          return
+        }
         setStore("turnLimit", 30)
+        setStore("loadingMore", false)
+        setInitialScrollPending(true)
       },
       { defer: true },
     ),
@@ -245,10 +259,66 @@ export function SessionPane(props: SessionPaneProps) {
   const autoScroll = createAutoScroll({
     working: isAtBottom,
   })
+  const historyThreshold = 120
 
   const updateIsAtBottom = (el: HTMLElement) => {
     setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 50)
   }
+
+  const loadMoreHistory = async (containerOverride?: HTMLElement) => {
+    const id = sessionId()
+    if (!id) return
+    if (!sdkDirectoryMatches()) return
+    if (store.loadingMore) return
+    if (!sync.session.history.more(id)) return
+    if (sync.session.history.loading(id)) return
+
+    const container = containerOverride ?? scrollContainer()
+    const anchor = container ? captureViewportAnchor(container) : null
+    const beforeCount = sessionMessages.visibleUserMessages().length
+
+    setStore("loadingMore", true)
+    await sync.session.history.loadMore(id).finally(() => {
+      setStore("loadingMore", false)
+    })
+
+    if (sessionId() !== id) return
+
+    const afterCount = sessionMessages.visibleUserMessages().length
+    if (afterCount > store.turnLimit) {
+      setStore("turnLimit", afterCount)
+    }
+    if (afterCount <= beforeCount) return
+    if (!container) return
+    if (!anchor) return
+    requestAnimationFrame(() => {
+      if (sessionId() !== id) return
+      const restored = restoreViewportAnchor(container, anchor)
+      if (!restored) return
+      updateIsAtBottom(container)
+    })
+  }
+
+  const maybeLoadMoreHistory = (container: HTMLElement) => {
+    if (container.scrollTop > historyThreshold) return
+    void loadMoreHistory(container)
+  }
+
+  createEffect(() => {
+    if (!initialScrollPending()) return
+    const count = sessionMessageCount()
+    if (count === undefined) return
+    const container = scrollContainer()
+    if (!container) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!initialScrollPending()) return
+        autoScroll.forceScrollToBottom()
+        setIsAtBottom(true)
+        setInitialScrollPending(false)
+      })
+    })
+  })
 
   const captureViewportAnchor = (container: HTMLElement): ViewportAnchor | null => {
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50
@@ -564,22 +634,6 @@ export function SessionPane(props: SessionPaneProps) {
     ),
   )
 
-  // Scroll to bottom when session loads
-  createEffect(
-    on(
-      () => sessionId(),
-      () => {
-        const container = scrollContainer()
-        if (container) {
-          requestAnimationFrame(() => {
-            autoScroll.forceScrollToBottom()
-            setIsAtBottom(true)
-          })
-        }
-      },
-    ),
-  )
-
   // Todo footer collapse state
   const [todoCollapsed, setTodoCollapsed] = createSignal(false)
 
@@ -732,6 +786,7 @@ export function SessionPane(props: SessionPaneProps) {
           <div
             ref={setScrollRef}
             class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
+            classList={{ invisible: initialScrollPending() }}
             onScroll={(e) => {
               autoScroll.handleScroll()
               const el = e.target as HTMLElement
@@ -739,6 +794,7 @@ export function SessionPane(props: SessionPaneProps) {
               clampTopAnchorScroll(el)
               setViewportAnchor(captureViewportAnchor(el))
               updateIsAtBottom(el)
+              maybeLoadMoreHistory(el)
             }}
           >
             <div
@@ -915,6 +971,7 @@ export function SessionPane(props: SessionPaneProps) {
           visibleUserMessages={sessionMessages.visibleUserMessages}
           lastUserMessage={sessionMessages.lastUserMessage}
           working={working}
+          onRequestHistory={(container) => loadMoreHistory(container)}
           messageActions={{
             onEdit: messageActions.editMessage,
             onRestore: messageActions.restoreCheckpoint,
