@@ -357,11 +357,11 @@ export namespace SessionPrompt {
       cost: number
       userMessageID: string
     }) => {
-      const snapshot = await Snapshot.track()
+      const finish = await Snapshot.track()
       await Session.updatePart({
         id: Identifier.ascending("part"),
         reason: input.finish,
-        snapshot,
+        snapshot: finish,
         messageID: input.messageID,
         sessionID,
         type: "step-finish",
@@ -377,6 +377,7 @@ export namespace SessionPrompt {
             sessionID,
             type: "patch",
             hash: patch.hash,
+            to: finish,
             files: patch.files,
           })
         }

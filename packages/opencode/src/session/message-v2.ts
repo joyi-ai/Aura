@@ -54,6 +54,7 @@ export namespace MessageV2 {
   export const PatchPart = PartBase.extend({
     type: z.literal("patch"),
     hash: z.string(),
+    to: z.string().optional(),
     files: z.string().array(),
   }).meta({
     ref: "PatchPart",

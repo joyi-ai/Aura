@@ -55,6 +55,31 @@ test("revert should remove new files", async () => {
   })
 })
 
+test("revert merges when file changed after patch", async () => {
+  await using tmp = await bootstrap()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const before = await Snapshot.track()
+      expect(before).toBeTruthy()
+
+      await Bun.write(`${tmp.path}/a.txt`, `${tmp.extra.aContent} world`)
+
+      const after = await Snapshot.track()
+      expect(after).toBeTruthy()
+
+      const patch = await Snapshot.patch(before!)
+      patch.to = after!
+
+      await Bun.write(`${tmp.path}/a.txt`, `${tmp.extra.aContent} world!`)
+
+      await Snapshot.revert([patch])
+
+      expect(await Bun.file(`${tmp.path}/a.txt`).text()).toBe(`${tmp.extra.aContent}!`)
+    },
+  })
+})
+
 test("revert in subdirectory", async () => {
   await using tmp = await bootstrap()
   await Instance.provide({

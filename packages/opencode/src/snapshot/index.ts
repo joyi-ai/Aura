@@ -116,6 +116,7 @@ export namespace Snapshot {
 
   export const Patch = z.object({
     hash: z.string(),
+    to: z.string().optional(),
     files: z.string().array(),
   })
   export type Patch = z.infer<typeof Patch>
@@ -173,33 +174,136 @@ export namespace Snapshot {
   export async function revert(patches: Patch[]) {
     const git = gitdir()
     await withLock(git, async () => {
-      const files = new Set<string>()
+      const items = new Map<string, { hash: string; to?: string }>()
       for (const item of patches) {
         for (const file of item.files) {
-          if (files.has(file)) continue
-          log.info("reverting", { file, hash: item.hash })
-          const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} checkout ${item.hash} -- ${file}`
+          const existing = items.get(file)
+          if (!existing) {
+            items.set(file, { hash: item.hash, to: item.to })
+            continue
+          }
+          if (item.to) {
+            items.set(file, { hash: existing.hash, to: item.to })
+          }
+        }
+      }
+
+      const treeHas = async (hash: string, relativePath: string) => {
+        const result =
+          await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-tree ${hash} -- ${relativePath}`
             .quiet()
             .cwd(Instance.worktree)
             .nothrow()
-          if (result.exitCode !== 0) {
-            const relativePath = path.relative(Instance.worktree, file)
-            const checkTree =
-              await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-tree ${item.hash} -- ${relativePath}`
-                .quiet()
-                .cwd(Instance.worktree)
-                .nothrow()
-            if (checkTree.exitCode === 0 && checkTree.text().trim()) {
-              log.info("file existed in snapshot but checkout failed, keeping", {
-                file,
-              })
-            } else {
-              log.info("file did not exist in snapshot, deleting", { file })
-              await fs.unlink(file).catch(() => {})
-            }
-          }
-          files.add(file)
+        if (result.exitCode !== 0) return false
+        return !!result.text().trim()
+      }
+
+      const matchesTree = async (hash: string, relativePath: string) => {
+        const result =
+          await $`git --git-dir ${git} --work-tree ${Instance.worktree} diff --quiet ${hash} -- ${relativePath}`
+            .quiet()
+            .cwd(Instance.worktree)
+            .nothrow()
+        if (result.exitCode === 0) return true
+        if (result.exitCode === 1) return false
+        log.warn("snapshot diff failed", {
+          hash,
+          file: relativePath,
+          exitCode: result.exitCode,
+        })
+        return undefined
+      }
+
+      const checkoutFile = async (hash: string, file: string, relativePath: string) => {
+        log.info("reverting", { file, hash })
+        const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} checkout ${hash} -- ${file}`
+          .quiet()
+          .cwd(Instance.worktree)
+          .nothrow()
+        if (result.exitCode === 0) return
+        const checkTree =
+          await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-tree ${hash} -- ${relativePath}`
+            .quiet()
+            .cwd(Instance.worktree)
+            .nothrow()
+        if (checkTree.exitCode === 0 && checkTree.text().trim()) {
+          log.info("file existed in snapshot but checkout failed, keeping", {
+            file,
+          })
+          return
         }
+        log.info("file did not exist in snapshot, deleting", { file })
+        await fs.unlink(file).catch(() => {})
+      }
+
+      const applyReverse = async (from: string, to: string, relativePath: string) => {
+        const diff =
+          await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --full-index --binary ${from} ${to} -- ${relativePath}`
+            .quiet()
+            .cwd(Instance.worktree)
+            .nothrow()
+        if (diff.exitCode !== 0) {
+          log.warn("failed to build revert patch", { file: relativePath, from, to, exitCode: diff.exitCode })
+          return false
+        }
+        const patch = diff.text()
+        if (!patch.trim()) return true
+        const proc = Bun.spawn(
+          ["git", "--git-dir", git, "--work-tree", Instance.worktree, "apply", "-R", "--3way", "--whitespace=nowarn", "--"],
+          {
+            cwd: Instance.worktree,
+            stdin: "pipe",
+            stdout: "ignore",
+            stderr: "ignore",
+          },
+        )
+        const input = proc.stdin
+        if (!input) return false
+        input.write(patch)
+        input.end()
+        await proc.exited
+        if (proc.exitCode === 0) return true
+        return false
+      }
+
+      for (const [file, item] of items) {
+        const relativePath = path.relative(Instance.worktree, file)
+        if (!item.to) {
+          await checkoutFile(item.hash, file, relativePath)
+          continue
+        }
+        const exists = await Bun.file(file).exists()
+        const fromHas = await treeHas(item.hash, relativePath)
+        const toHas = await treeHas(item.to, relativePath)
+        const matchesFrom = fromHas ? await matchesTree(item.hash, relativePath) : !exists
+        const matchesTo = toHas ? await matchesTree(item.to, relativePath) : !exists
+
+        if (matchesFrom === true) continue
+        if (matchesTo === true) {
+          await checkoutFile(item.hash, file, relativePath)
+          continue
+        }
+        if (matchesFrom === undefined || matchesTo === undefined) {
+          log.warn("revert conflict, unable to compare", { file, hash: item.hash, to: item.to })
+          continue
+        }
+        if (!fromHas && toHas) {
+          if (!exists) continue
+          log.warn("revert conflict, file changed after creation", { file, hash: item.hash, to: item.to })
+          continue
+        }
+        if (fromHas && !toHas) {
+          if (!exists) {
+            await checkoutFile(item.hash, file, relativePath)
+            continue
+          }
+          log.warn("revert conflict, file changed after deletion", { file, hash: item.hash, to: item.to })
+          continue
+        }
+        if (!fromHas && !toHas) continue
+        const merged = await applyReverse(item.hash, item.to, relativePath)
+        if (merged) continue
+        log.warn("revert conflict, merge failed", { file, hash: item.hash, to: item.to })
       }
     })
   }

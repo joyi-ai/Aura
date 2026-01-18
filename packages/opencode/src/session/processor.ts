@@ -245,10 +245,11 @@ export namespace SessionProcessor {
                   input.assistantMessage.finish = value.finishReason
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
+                  const finish = await Snapshot.track()
                   await Session.updatePart({
                     id: Identifier.ascending("part"),
                     reason: value.finishReason,
-                    snapshot: await Snapshot.track(),
+                    snapshot: finish,
                     messageID: input.assistantMessage.id,
                     sessionID: input.assistantMessage.sessionID,
                     type: "step-finish",
@@ -265,6 +266,7 @@ export namespace SessionProcessor {
                         sessionID: input.sessionID,
                         type: "patch",
                         hash: patch.hash,
+                        to: finish,
                         files: patch.files,
                       })
                     }
@@ -365,6 +367,7 @@ export namespace SessionProcessor {
             })
           }
           if (snapshot) {
+            const finish = await Snapshot.track()
             const patch = await Snapshot.patch(snapshot)
             if (patch.files.length) {
               await Session.updatePart({
@@ -373,6 +376,7 @@ export namespace SessionProcessor {
                 sessionID: input.sessionID,
                 type: "patch",
                 hash: patch.hash,
+                to: finish,
                 files: patch.files,
               })
             }
