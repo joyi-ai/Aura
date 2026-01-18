@@ -897,6 +897,37 @@ export const SessionRoutes = lazy(() =>
       },
     )
     .post(
+      "/:sessionID/cleanup",
+      describeRoute({
+        summary: "Cleanup reverted messages",
+        description: "Finalize the deletion of reverted messages without triggering compaction.",
+        operationId: "session.cleanup",
+        responses: {
+          200: {
+            description: "Updated session",
+            content: {
+              "application/json": {
+                schema: resolver(Session.Info),
+              },
+            },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "param",
+        z.object({
+          sessionID: z.string(),
+        }),
+      ),
+      async (c) => {
+        const sessionID = c.req.valid("param").sessionID
+        const session = await Session.get(sessionID)
+        await SessionRevert.cleanup(session)
+        return c.json(await Session.get(sessionID))
+      },
+    )
+    .post(
       "/:sessionID/permissions/:permissionID",
       describeRoute({
         summary: "Respond to permission",

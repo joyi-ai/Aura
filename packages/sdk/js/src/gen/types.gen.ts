@@ -4368,6 +4368,39 @@ export type SessionUnrevertResponses = {
 
 export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnrevertResponses]
 
+export type SessionCleanupData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+  }
+  url: "/session/{sessionID}/cleanup"
+}
+
+export type SessionCleanupErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionCleanupError = SessionCleanupErrors[keyof SessionCleanupErrors]
+
+export type SessionCleanupResponses = {
+  /**
+   * Updated session
+   */
+  200: Session
+}
+
+export type SessionCleanupResponse = SessionCleanupResponses[keyof SessionCleanupResponses]
+
 export type PermissionRespondData = {
   body?: {
     response: "once" | "always" | "reject"
