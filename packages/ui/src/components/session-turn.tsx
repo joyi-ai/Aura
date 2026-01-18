@@ -1304,10 +1304,12 @@ export function SessionTurn(
                                     when={reasoning()}
                                     fallback={
                                       <div data-slot="session-turn-reasoning">
-                                        <Show when={store.reasoningLoading}>
-                                          <Spinner />
-                                        </Show>
-                                        <Show when={!store.reasoningLoading}>Loading reasoning…</Show>
+                                        <div data-slot="session-turn-reasoning-body">
+                                          <Show when={store.reasoningLoading}>
+                                            <Spinner />
+                                          </Show>
+                                          <Show when={!store.reasoningLoading}>Loading reasoning…</Show>
+                                        </div>
                                       </div>
                                     }
                                   >
@@ -1318,7 +1320,9 @@ export function SessionTurn(
                                         data-streaming={working()}
                                         data-animating={reasoningAnimating()}
                                       >
-                                        <Markdown text={text()} cacheKey={reasoningPartId()} />
+                                        <div data-slot="session-turn-reasoning-body">
+                                          <Markdown text={text()} cacheKey={reasoningPartId()} />
+                                        </div>
                                       </div>
                                     )}
                                   </Show>

@@ -114,6 +114,14 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const renderedUserMessages = createMemo(() => sessionMessages.visibleUserMessages())
+  const assistant = createMemo(() => {
+    const id = sessionId()
+    if (!id) return false
+    const last = sessionMessages.lastUserMessage()
+    if (!last) return false
+    const messages = sync.data.message[id] ?? []
+    return messages.some((message) => message.role === "assistant" && message.parentID === last.id)
+  })
 
   // Focus state
   const isFocused = createMemo(() => props.isFocused?.() ?? true)
@@ -239,12 +247,14 @@ export function SessionPane(props: SessionPaneProps) {
   // Scroll behavior for session pane (shared between desktop and mobile)
   const scrollBehavior = useScrollBehavior(props.paneId, true)
 
+  const [tick, setTick] = createSignal(0)
   const sessionScroll = useSessionScroll({
     working,
     composerHeight: scrollBehavior.composerHeight,
     snapRequested: scrollBehavior.snapRequested,
     clearSnapRequest: scrollBehavior.clearSnapRequest,
     onUserScrolledAway: scrollBehavior.setUserScrolledAway,
+    onContentResize: () => setTick((value) => value + 1),
   })
   const mdQuery = window.matchMedia("(min-width: 768px)")
   const [isDesktop, setIsDesktop] = createSignal(mdQuery.matches)
@@ -257,7 +267,40 @@ export function SessionPane(props: SessionPaneProps) {
   const [mobileScrollEl, setMobileScrollEl] = createSignal<HTMLElement | undefined>(undefined)
   const [mobileContentEl, setMobileContentEl] = createSignal<HTMLElement | undefined>(undefined)
   const [scrollEl, setScrollEl] = createSignal<HTMLElement | undefined>(undefined)
+  const [spacerEl, setSpacerEl] = createSignal<HTMLElement | undefined>(undefined)
+  const [spacer, setSpacer] = createSignal(0)
+  const [jumpVisible, setJumpVisible] = createSignal(false)
   const lastScrollTop = { value: 0 }
+
+  const updateJumpButton = (target?: HTMLElement) => {
+    const el = target ?? scrollEl()
+    if (!el) {
+      setJumpVisible(false)
+      return
+    }
+    const last = sessionMessages.lastUserMessage()
+    if (!last) {
+      setJumpVisible(false)
+      return
+    }
+    const node = el.querySelector(`[data-message-id="${last.id}"]`) as HTMLElement | null
+    if (!node) {
+      setJumpVisible(false)
+      return
+    }
+    const container = el.getBoundingClientRect()
+    const rect = node.getBoundingClientRect()
+    const distance = rect.bottom - container.bottom
+    setJumpVisible(distance > MESSAGE_WINDOW_BOTTOM_THRESHOLD)
+  }
+
+  const handleJumpToBottom = () => {
+    const el = scrollEl()
+    if (!el) return
+    scrollBehavior.setUserScrolledAway(false)
+    setJumpVisible(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  }
 
   createEffect(() => {
     const useDesktop = isDesktop()
@@ -268,6 +311,46 @@ export function SessionPane(props: SessionPaneProps) {
     sessionScroll.contentRef(content)
   })
 
+  createEffect(() => {
+    tick()
+    const el = scrollEl()
+    if (!el) {
+      setSpacer(0)
+      return
+    }
+    const height = sessionScroll.containerHeight()
+    if (height <= 0) {
+      setSpacer(0)
+      return
+    }
+    const nodes = el.querySelectorAll("[data-message-id]")
+    const last = nodes[nodes.length - 1] as HTMLElement | undefined
+    if (!last) {
+      setSpacer(0)
+      return
+    }
+    const node = spacerEl()
+    const space = node && el.contains(node) ? node.offsetHeight : 0
+    const head = 48
+    const target = Math.max(0, last.offsetTop - head)
+    const max = el.scrollHeight - space - el.clientHeight
+    const need = Math.max(target - max, 0)
+    const base = Math.max(height - 100, 0)
+    const cap = 120
+    const min = 24
+    const small = Math.min(base, cap)
+    const want = assistant() ? Math.max(small, min) : base
+    const next = Math.max(need, want)
+    setSpacer(next)
+  })
+
+  createEffect(() => {
+    tick()
+    spacer()
+    scrollEl()
+    sessionMessages.lastUserMessage()
+    updateJumpButton()
+  })
 
   createEffect(() => {
     const session = sessionId()
@@ -382,6 +465,7 @@ export function SessionPane(props: SessionPaneProps) {
 
     const awayFromTop = el.scrollTop > MESSAGE_WINDOW_TOP_THRESHOLD
     if (awayFromTop && !store.windowExpandArmed) setStore("windowExpandArmed", true)
+    updateJumpButton(el)
     if (awayFromTop) return
 
     if (store.windowExpandArmed) {
@@ -488,10 +572,11 @@ export function SessionPane(props: SessionPaneProps) {
                   )}
                 </For>
               </div>
-              {/* Spacer to allow last message to scroll to top of viewport */}
+              {/* Spacer to keep snap-to-top breathing room */}
               <div
+                ref={setSpacerEl}
                 class="shrink-0"
-                style={{ height: `${Math.max(sessionScroll.containerHeight() - 100, 0)}px` }}
+                style={{ height: `${spacer()}px` }}
               />
               {/* Todo footer - sticky at bottom, hides when all complete */}
               <SessionTodoFooter
@@ -648,6 +733,19 @@ export function SessionPane(props: SessionPaneProps) {
           </div>
         </div>
       </div>
+
+      <Show when={jumpVisible()}>
+        <div class="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 md:bottom-6 z-30">
+          <button
+            type="button"
+            aria-label="Jump to bottom"
+            class="pointer-events-auto flex items-center justify-center rounded-full border border-border-strong-base p-2 text-text-base shadow-sm transition-colors"
+            onClick={handleJumpToBottom}
+          >
+            <Icon name="chevron-down" size="small" />
+          </button>
+        </div>
+      </Show>
 
     </div>
   )
