@@ -76,6 +76,7 @@ const createPlatform = (password: Accessor<string | null>): Platform => ({
       clear(): Promise<unknown>
       keys(): Promise<string[]>
       length(): Promise<number>
+      save?(): Promise<unknown>
     }
 
     const WRITE_DEBOUNCE_MS = 250
@@ -99,6 +100,7 @@ const createPlatform = (password: Accessor<string | null>): Platform => ({
         },
         keys: async () => Array.from(data.keys()),
         length: async () => data.size,
+        save: async () => {},
       }
       return store
     }
@@ -141,6 +143,7 @@ const createPlatform = (password: Accessor<string | null>): Platform => ({
               }
             }
           }
+          if (store.save) await store.save().catch(() => undefined)
         })().finally(() => {
           flushing = undefined
         })
