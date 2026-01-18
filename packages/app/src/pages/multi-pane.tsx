@@ -28,6 +28,7 @@ import { PaneHome } from "@/components/multi-pane/pane-home"
 import { getPaneProjectLabel, getPaneState, getPaneTitle } from "@/utils/pane"
 import { useCommand } from "@/context/command"
 import { normalizeDirectoryKey } from "@/utils/directory"
+import { BottomBar } from "@/components/bottom-bar"
 
 type MultiPanePageProps = {
   initialDir?: string
@@ -51,7 +52,8 @@ type AskUserRequestEntry = {
 
 type PlanModeReplyInput = {
   requestID: string
-  approved: boolean
+  approved?: boolean
+  reject?: boolean
 }
 
 type SyncContext = ReturnType<typeof useSync>
@@ -132,6 +134,16 @@ const createAskUserResponder = (sync: SyncContext, baseUrl: string, directory: s
 
 const createPlanModeResponder = (baseUrl: string, directory: string) => {
   return async (input: PlanModeReplyInput) => {
+    if (input.reject) {
+      const response = await fetch(`${baseUrl}/planmode/${input.requestID}/reject`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-opencode-directory": directory,
+        },
+      })
+      return response.json()
+    }
     const response = await fetch(`${baseUrl}/planmode/${input.requestID}/reply`, {
       method: "POST",
       headers: {
@@ -702,7 +714,9 @@ function MultiPaneContent(props: MultiPanePageProps) {
               </DragDropProvider>
             </div>
           </div>
-          <GlobalPromptWrapper />
+          <BottomBar>
+            <GlobalPromptWrapper />
+          </BottomBar>
         </Show>
       </div>
     </div>

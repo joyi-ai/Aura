@@ -45,9 +45,9 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
         requestID: request.id,
         approved: true,
       })
-      setSubmitted("approved")
-      // Auto-switch to build agent after plan approval
+      // Auto-switch to build agent before setSubmitted (which triggers re-render)
       data.setAgent?.("build")
+      setSubmitted("approved")
     } catch {
       setIsSubmitting(false)
       setActiveAction(null)
@@ -63,7 +63,7 @@ export const PlanReview: Component<PlanReviewProps> = (props) => {
     try {
       await data.respondToPlanMode({
         requestID: request.id,
-        approved: false,
+        reject: true,
       })
       setSubmitted("rejected")
     } catch {

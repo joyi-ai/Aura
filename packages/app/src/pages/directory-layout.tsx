@@ -120,7 +120,17 @@ export default function Layout(props: ParentProps) {
               return response.json()
             }
 
-            const respondToPlanMode = async (input: { requestID: string; approved: boolean }) => {
+            const respondToPlanMode = async (input: { requestID: string; approved?: boolean; reject?: boolean }) => {
+              if (input.reject) {
+                const response = await fetch(`${globalSDK.url}/planmode/${input.requestID}/reject`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-opencode-directory": directory(),
+                  },
+                })
+                return response.json()
+              }
               const response = await fetch(`${globalSDK.url}/planmode/${input.requestID}/reply`, {
                 method: "POST",
                 headers: {

@@ -2299,6 +2299,39 @@ export namespace Server {
             return c.json(true)
           },
         )
+        .post(
+          "/planmode/:requestID/reject",
+          describeRoute({
+            summary: "Reject plan review",
+            description: "Reject a plan review request from Claude.",
+            operationId: "planmode.reject",
+            responses: {
+              200: {
+                description: "Plan rejected successfully",
+                content: {
+                  "application/json": {
+                    schema: resolver(z.boolean()),
+                  },
+                },
+              },
+              ...errors(400, 404),
+            },
+          }),
+          validator(
+            "param",
+            z.object({
+              requestID: z.string(),
+            }),
+          ),
+          async (c) => {
+            const params = c.req.valid("param")
+            const success = PlanMode.reject(params.requestID)
+            if (!success) {
+              return c.json({ error: "Request not found" }, 404)
+            }
+            return c.json(true)
+          },
+        )
         .get(
           "/planmode",
           describeRoute({

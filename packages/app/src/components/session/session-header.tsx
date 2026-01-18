@@ -56,13 +56,6 @@ export function SessionHeader() {
 
   return (
     <header class="h-12 shrink-0 bg-background-stronger border-b border-border-weak-base flex">
-      <button
-        type="button"
-        class="xl:hidden w-12 shrink-0 flex items-center justify-center border-r border-border-weak-base hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active transition-colors"
-        onClick={layout.mobileSidebar.toggle}
-      >
-        <Icon name="menu" size="small" />
-      </button>
       <div class="px-4 flex items-center justify-between gap-4 w-full">
         <div class="flex items-center gap-3 min-w-0">
           <div class="flex items-center gap-2 min-w-0">

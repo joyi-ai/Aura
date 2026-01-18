@@ -72,12 +72,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     const [store, setStore, _, ready] = persisted(
       { ...target, migrate },
       createStore({
-        sidebar: {
-          opened: false,
-          width: 344,
-          workspaces: {} as Record<string, boolean>,
-          workspacesDefault: false,
-        },
         terminal: {
           height: 280,
         },
@@ -86,9 +80,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         session: {
           width: 600,
-        },
-        mobileSidebar: {
-          opened: false,
         },
         sessionTabs: {} as Record<string, SessionTabs>,
         sessionView: {} as Record<string, SessionView>,
@@ -377,32 +368,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           server.projects.move(directory, toIndex)
         },
       },
-      sidebar: {
-        opened: createMemo(() => store.sidebar.opened),
-        open() {
-          setStore("sidebar", "opened", true)
-        },
-        close() {
-          setStore("sidebar", "opened", false)
-        },
-        toggle() {
-          setStore("sidebar", "opened", (x) => !x)
-        },
-        width: createMemo(() => store.sidebar.width),
-        resize(width: number) {
-          setStore("sidebar", "width", width)
-        },
-        workspaces(directory: string) {
-          return createMemo(() => store.sidebar.workspaces[directory] ?? store.sidebar.workspacesDefault ?? false)
-        },
-        setWorkspaces(directory: string, value: boolean) {
-          setStore("sidebar", "workspaces", directory, value)
-        },
-        toggleWorkspaces(directory: string) {
-          const current = store.sidebar.workspaces[directory] ?? store.sidebar.workspacesDefault ?? false
-          setStore("sidebar", "workspaces", directory, !current)
-        },
-      },
       terminal: {
         height: createMemo(() => store.terminal.height),
         resize(height: number) {
@@ -427,18 +392,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return
           }
           setStore("session", "width", width)
-        },
-      },
-      mobileSidebar: {
-        opened: createMemo(() => store.mobileSidebar?.opened ?? false),
-        show() {
-          setStore("mobileSidebar", "opened", true)
-        },
-        hide() {
-          setStore("mobileSidebar", "opened", false)
-        },
-        toggle() {
-          setStore("mobileSidebar", "opened", (x) => !x)
         },
       },
       view(sessionKey: string) {

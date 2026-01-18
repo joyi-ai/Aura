@@ -25,6 +25,18 @@ export namespace PlanMode {
   export const Event = {
     PlanReview: BusEvent.define("planmode.review", Request),
     PlanResponded: BusEvent.define("planmode.responded", Response),
+    PlanRejected: BusEvent.define(
+      "planmode.rejected",
+      z.object({
+        requestID: z.string(),
+      }),
+    ),
+  }
+
+  export class RejectedError extends Error {
+    constructor() {
+      super("The user rejected this plan")
+    }
   }
 
   interface PendingPlan {
@@ -83,6 +95,23 @@ export namespace PlanMode {
       approved: input.approved,
     })
     pendingPlan.resolve(input.approved)
+    return true
+  }
+
+  /**
+   * Reject a pending plan review (user explicitly rejected the plan)
+   */
+  export function reject(requestID: string): boolean {
+    const pendingPlan = pending.get(requestID)
+    if (!pendingPlan) {
+      log.warn("no pending plan found for rejection", { requestID })
+      return false
+    }
+
+    log.info("rejecting plan review", { requestID })
+    pending.delete(requestID)
+    Bus.publish(Event.PlanRejected, { requestID })
+    pendingPlan.reject(new RejectedError())
     return true
   }
 
