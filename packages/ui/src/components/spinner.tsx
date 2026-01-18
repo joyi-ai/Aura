@@ -45,6 +45,7 @@ export function Spinner(props: {
         ...(props.classList ?? {}),
         [props.class ?? ""]: !!props.class,
       }}
+      style={{ animation: "spinner-breathe 2.5s ease-in-out infinite" }}
     >
       <For each={dots}>
         {(dot) => (

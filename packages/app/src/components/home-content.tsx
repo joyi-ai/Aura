@@ -235,9 +235,7 @@ export function HomeContent(props: HomeContentProps) {
     const root = options.find((option) => option.kind === "root") ?? options[0]
     const currentKey = normalizeDirectoryKey(props.currentWorktree)
     if (!currentKey) return root
-    return (
-      options.find((option) => option.kind !== "new" && normalizeDirectoryKey(option.path) === currentKey) ?? root
-    )
+    return options.find((option) => option.kind !== "new" && normalizeDirectoryKey(option.path) === currentKey) ?? root
   })
 
   async function handleWorktreeSelect(option: WorktreeOption | undefined) {
@@ -394,14 +392,6 @@ export function HomeContent(props: HomeContentProps) {
                   <Show when={!props.hideLogo}>
                     <Logo class={`${logoWidth()} opacity-12`} />
                   </Show>
-                  <Button
-                    size="large"
-                    variant="ghost"
-                    class="mt-4 mx-auto text-14-regular text-text-weak"
-                    onClick={openServerDialog}
-                  >
-                    <ServerStatusContent />
-                  </Button>
                   <Switch>
                     <Match when={projects().length > 0 || selectedProject()}>
                       <div class={`${marginTop()} w-full flex flex-col gap-4`}>
@@ -564,20 +554,15 @@ export function HomeContent(props: HomeContentProps) {
         </div>
         <Show when={isCompact() || showThemePicker()}>
           <div class="pointer-events-none absolute inset-x-0 bottom-0 pb-6">
-            <div
-              class={`pointer-events-auto mx-auto w-full ${maxWidth()} px-6 flex`}
-              classList={{ "justify-between": isCompact(), "justify-end": !isCompact() }}
-            >
-              <Show when={isCompact()}>
-                <Button
-                  size="normal"
-                  variant="ghost"
-                  class="px-2 text-12-regular text-text-weak min-w-0"
-                  onClick={openServerDialog}
-                >
-                  <ServerStatusContent nameClass="truncate max-w-[140px]" />
-                </Button>
-              </Show>
+            <div class={`pointer-events-auto mx-auto w-full ${maxWidth()} px-6 flex justify-between`}>
+              <Button
+                size="normal"
+                variant="ghost"
+                class="px-2 text-12-regular text-text-weak min-w-0"
+                onClick={openServerDialog}
+              >
+                <ServerStatusContent nameClass="truncate max-w-[140px]" />
+              </Button>
               <Show when={showThemePicker()}>
                 <ThemeDropup />
               </Show>

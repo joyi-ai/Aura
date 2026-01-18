@@ -36,3 +36,13 @@
     opacity: 0.2;
   }
 }
+
+@keyframes spinner-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+}

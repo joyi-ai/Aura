@@ -481,6 +481,11 @@ export function SessionPane(props: SessionPaneProps) {
 
   const handleMessageSelect = (message: UserMessage) => {
     sessionMessages.setActiveMessage(message)
+    const el = scrollEl()
+    if (!el) return
+    const node = el.querySelector(`[data-message-id="${message.id}"]`) as HTMLElement | null
+    if (!node) return
+    node.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   const handleScroll = (e: Event) => {

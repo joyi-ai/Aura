@@ -1235,25 +1235,25 @@ export function SessionTurn(
                     {/* Working indicator - shows while working */}
 
                     <Show when={working()}>
-                      <div data-slot="session-turn-assistant-working">
-                        <div
-                          data-slot="session-turn-response-trigger"
-                          data-disable-sticky={props.disableSticky || undefined}
-                        >
-                          <Button data-slot="session-turn-collapsible-trigger-content" variant="ghost" size="small">
-                            <Spinner />
+                      <div
+                        data-slot="session-turn-response-trigger"
+                        data-disable-sticky={props.disableSticky || undefined}
+                      >
+                        <Button data-slot="session-turn-collapsible-trigger-content" variant="ghost" size="small">
+                          <Spinner />
 
-                            <span data-slot="session-turn-status-text" data-animating={statusAnimating()}>
-                              {displayStatus() ?? "Considering next steps"}
-                            </span>
+                          <span data-slot="session-turn-status-text" data-animating={statusAnimating()}>
+                            {displayStatus() ?? "Considering next steps"}
+                          </span>
 
-                            <span>·</span>
+                          <span>·</span>
 
-                            <span>{store.duration}</span>
-                          </Button>
-                        </div>
+                          <span>{store.duration}</span>
+                        </Button>
+                      </div>
 
-                        <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
+                      <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
+                        <div data-slot="session-turn-assistant-working">
                           <div data-slot="session-turn-steps-group">
                             <Show when={taskAgents().length > 0}>
                               <div data-slot="session-turn-task-agents">
@@ -1332,8 +1332,8 @@ export function SessionTurn(
                               </div>
                             </Show>
                           </div>
-                        </Show>
-                      </div>
+                        </div>
+                      </Show>
                     </Show>
 
                     <Show when={inlineToolParts().length > 0}>
