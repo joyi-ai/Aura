@@ -386,6 +386,7 @@ export type PatchPart = {
   messageID: string
   type: "patch"
   hash: string
+  to?: string
   files: Array<string>
 }
 
@@ -1008,49 +1009,12 @@ export type ClaudePluginLoaded = {
 
 export type ClaudePluginInstalled = {
   id: string
-  source: "local" | "marketplace"
+  source?: string
   path: string
   enabled: boolean
   manifest: ClaudePluginManifest
   installedAt: number
   updatedAt?: number
-}
-
-export type ClaudePluginMarketplaceEntry = {
-  name: string
-  id?: string
-  version?: string
-  description?: string
-  author?: {
-    name: string
-    email?: string
-  }
-  source:
-    | string
-    | {
-        source: "url"
-        url: string
-      }
-  homepage?: string
-  repository?: string
-  downloads?: number
-  rating?: number
-  tags?: Array<string>
-  category?: string
-  strict?: boolean
-  lspServers?: {
-    [key: string]: {
-      command: string
-      args?: Array<string>
-      extensionToLanguage?: {
-        [key: string]: string
-      }
-      env?: {
-        [key: string]: string
-      }
-      startupTimeout?: number
-    }
-  }
 }
 
 export type ClaudeCodeSlashCommand = {
@@ -2504,87 +2468,6 @@ export type ClaudePluginInstalledResponses = {
 
 export type ClaudePluginInstalledResponse = ClaudePluginInstalledResponses[keyof ClaudePluginInstalledResponses]
 
-export type ClaudePluginMarketplaceData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/claude-plugin/marketplace"
-}
-
-export type ClaudePluginMarketplaceResponses = {
-  /**
-   * List of marketplace plugins
-   */
-  200: Array<ClaudePluginMarketplaceEntry>
-}
-
-export type ClaudePluginMarketplaceResponse = ClaudePluginMarketplaceResponses[keyof ClaudePluginMarketplaceResponses]
-
-export type ClaudePluginMarketplaceSearchData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    q: string
-  }
-  url: "/claude-plugin/marketplace/search"
-}
-
-export type ClaudePluginMarketplaceSearchErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ClaudePluginMarketplaceSearchError =
-  ClaudePluginMarketplaceSearchErrors[keyof ClaudePluginMarketplaceSearchErrors]
-
-export type ClaudePluginMarketplaceSearchResponses = {
-  /**
-   * Search results
-   */
-  200: Array<ClaudePluginMarketplaceEntry>
-}
-
-export type ClaudePluginMarketplaceSearchResponse =
-  ClaudePluginMarketplaceSearchResponses[keyof ClaudePluginMarketplaceSearchResponses]
-
-export type ClaudePluginInstallData = {
-  body?: {
-    id: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/claude-plugin/install"
-}
-
-export type ClaudePluginInstallErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * Not found
-   */
-  404: NotFoundError
-}
-
-export type ClaudePluginInstallError = ClaudePluginInstallErrors[keyof ClaudePluginInstallErrors]
-
-export type ClaudePluginInstallResponses = {
-  /**
-   * Installed plugin
-   */
-  200: ClaudePluginLoaded
-}
-
-export type ClaudePluginInstallResponse = ClaudePluginInstallResponses[keyof ClaudePluginInstallResponses]
-
 export type ClaudePluginUninstallData = {
   body?: {
     id: string
@@ -2731,50 +2614,6 @@ export type ClaudePluginAgentsResponses = {
 }
 
 export type ClaudePluginAgentsResponse = ClaudePluginAgentsResponses[keyof ClaudePluginAgentsResponses]
-
-export type ClaudePluginMarketplaceRefreshData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/claude-plugin/marketplace/refresh"
-}
-
-export type ClaudePluginMarketplaceRefreshResponses = {
-  /**
-   * Marketplace refreshed
-   */
-  200: Array<ClaudePluginMarketplaceEntry>
-}
-
-export type ClaudePluginMarketplaceRefreshResponse =
-  ClaudePluginMarketplaceRefreshResponses[keyof ClaudePluginMarketplaceRefreshResponses]
-
-export type ClaudePluginStatsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-  }
-  url: "/claude-plugin/stats"
-}
-
-export type ClaudePluginStatsResponses = {
-  /**
-   * Plugin statistics
-   */
-  200: {
-    [key: string]: {
-      name: string
-      downloads: number
-      stars: number
-      version?: string
-    }
-  }
-}
-
-export type ClaudePluginStatsResponse = ClaudePluginStatsResponses[keyof ClaudePluginStatsResponses]
 
 export type ClaudeCodeCommandsData = {
   body?: never

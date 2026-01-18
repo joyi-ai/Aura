@@ -119,16 +119,17 @@ export const SkillsPanel: Component = () => {
     setSaving(null)
   }
 
-  const items = createMemo(() =>
-    (skills() ?? [])
+  const items = createMemo(() => {
+    const rules = skillRule()
+    return (skills() ?? [])
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((skill) => ({
         ...skill,
-        enabled: isEnabled(skill.name),
+        enabled: resolveAction(rules, skill.name) !== "deny",
         source: inferSource(skill.location),
-      })),
-  )
+      }))
+  })
 
   return (
     <div class="flex flex-col gap-2">

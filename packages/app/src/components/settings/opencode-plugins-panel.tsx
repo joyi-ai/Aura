@@ -1,5 +1,4 @@
 import { Show, createMemo, createSignal, type Component } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tag } from "@opencode-ai/ui/tag"
@@ -176,14 +175,6 @@ export const OpenCodePluginsPanel: Component = () => {
               </Show>
             </div>
             <div class="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <Button
-                size="small"
-                variant="ghost"
-                disabled={saving() === item.spec}
-                onClick={() => togglePlugin(item, !item.enabled)}
-              >
-                {item.enabled ? "Disable" : "Enable"}
-              </Button>
               <Switch checked={item.enabled} disabled={saving() === item.spec} onChange={() => togglePlugin(item, !item.enabled)} />
             </div>
           </div>

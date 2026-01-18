@@ -7,9 +7,7 @@ import { ClaudePluginConfig } from "./config"
 import { ClaudePluginDiscovery } from "./discovery"
 import { ClaudePluginHooks } from "./hooks"
 import { ClaudePluginLoader } from "./loader"
-import { ClaudePluginMarketplace } from "./marketplace"
 import { ClaudePluginSchema } from "./schema"
-import { ClaudePluginStats } from "./stats"
 import { ClaudePluginStorage } from "./storage"
 import { ClaudePluginTransform } from "./transform"
 import { ClaudePluginTranscript } from "./transcript"
@@ -23,8 +21,6 @@ export namespace ClaudePlugin {
   export const Discovery = ClaudePluginDiscovery
   export const Storage = ClaudePluginStorage
   export const Loader = ClaudePluginLoader
-  export const Marketplace = ClaudePluginMarketplace
-  export const Stats = ClaudePluginStats
   export const Hooks = ClaudePluginHooks
   export const Transform = ClaudePluginTransform
   export const Transcript = ClaudePluginTranscript
@@ -119,46 +115,6 @@ export namespace ClaudePlugin {
   export async function get(id: string): Promise<ClaudePluginLoader.LoadedPlugin | undefined> {
     const s = await state()
     return s.plugins.get(id)
-  }
-
-  /**
-   * Install a plugin from the marketplace
-   */
-  export async function install(id: string): Promise<ClaudePluginLoader.LoadedPlugin> {
-    const entry = await ClaudePluginMarketplace.get(id)
-    if (!entry) {
-      throw new Error(`Plugin not found in marketplace: ${id}`)
-    }
-
-    // Download the plugin
-    const pluginPath = await ClaudePluginMarketplace.download(entry)
-
-    // Load the plugin
-    const loaded = await ClaudePluginLoader.loadPlugin(pluginPath)
-    if (!loaded) {
-      throw new Error(`Failed to load plugin: ${id}`)
-    }
-
-    // Save to storage
-    await ClaudePluginStorage.save({
-      id: loaded.id,
-      source: "marketplace",
-      path: pluginPath,
-      enabled: true,
-      manifest: loaded.manifest,
-      installedAt: Date.now(),
-    })
-
-    // Add to state
-    const s = await state()
-    s.plugins.set(loaded.id, loaded)
-    ClaudePluginHooks.register(loaded.hooks)
-    ClaudePluginHooks.registerPluginPath(loaded.id, loaded.path)
-
-    Bus.publish(Event.Loaded, { pluginId: loaded.id, pluginName: loaded.name })
-    log.info("installed plugin", { id: loaded.id })
-
-    return loaded
   }
 
   /**

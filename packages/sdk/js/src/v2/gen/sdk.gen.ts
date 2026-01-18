@@ -25,14 +25,7 @@ import type {
   ClaudePluginEnableErrors,
   ClaudePluginEnableResponses,
   ClaudePluginInstalledResponses,
-  ClaudePluginInstallErrors,
-  ClaudePluginInstallResponses,
   ClaudePluginListResponses,
-  ClaudePluginMarketplaceRefreshResponses,
-  ClaudePluginMarketplaceResponses,
-  ClaudePluginMarketplaceSearchErrors,
-  ClaudePluginMarketplaceSearchResponses,
-  ClaudePluginStatsResponses,
   ClaudePluginUninstallErrors,
   ClaudePluginUninstallResponses,
   CommandListResponses,
@@ -433,61 +426,6 @@ export class Project extends HeyApiClient {
   }
 }
 
-export class Marketplace extends HeyApiClient {
-  /**
-   * Search marketplace
-   *
-   * Search for plugins in the marketplace.
-   */
-  public search<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      q: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "q" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<
-      ClaudePluginMarketplaceSearchResponses,
-      ClaudePluginMarketplaceSearchErrors,
-      ThrowOnError
-    >({
-      url: "/claude-plugin/marketplace/search",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Refresh marketplace
-   *
-   * Clear the marketplace cache and fetch fresh data.
-   */
-  public refresh<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
-    return (options?.client ?? this.client).post<ClaudePluginMarketplaceRefreshResponses, unknown, ThrowOnError>({
-      url: "/claude-plugin/marketplace/refresh",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class ClaudePlugin extends HeyApiClient {
   /**
    * List loaded plugins
@@ -525,62 +463,6 @@ export class ClaudePlugin extends HeyApiClient {
       ...options,
       ...params,
     })
-  }
-
-  /**
-   * List marketplace plugins
-   *
-   * Get available plugins from the Claude Code marketplace.
-   */
-  public marketplace<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
-    return (options?.client ?? this.client).get<ClaudePluginMarketplaceResponses, unknown, ThrowOnError>({
-      url: "/claude-plugin/marketplace",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Install plugin
-   *
-   * Install a plugin from the marketplace.
-   */
-  public install<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      id?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "body", key: "id" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<ClaudePluginInstallResponses, ClaudePluginInstallErrors, ThrowOnError>(
-      {
-        url: "/claude-plugin/install",
-        ...options,
-        ...params,
-        headers: {
-          "Content-Type": "application/json",
-          ...options?.headers,
-          ...params.headers,
-        },
-      },
-    )
   }
 
   /**
@@ -731,27 +613,6 @@ export class ClaudePlugin extends HeyApiClient {
       ...params,
     })
   }
-
-  /**
-   * Get plugin stats
-   *
-   * Get download statistics from the community plugin registry.
-   */
-  public stats<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
-    return (options?.client ?? this.client).get<ClaudePluginStatsResponses, unknown, ThrowOnError>({
-      url: "/claude-plugin/stats",
-      ...options,
-      ...params,
-    })
-  }
-
-  marketplace2 = new Marketplace({ client: this.client })
 }
 
 export class ClaudeCode extends HeyApiClient {

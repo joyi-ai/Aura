@@ -5,7 +5,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Select } from "@opencode-ai/ui/select"
-import { Tabs } from "@opencode-ai/ui/tabs"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useVoice } from "@/context/voice"
 import { usePlatform } from "@/context/platform"
@@ -145,9 +144,9 @@ const VoiceSettingsPanel: Component = () => {
             <span class="text-12-regular text-text-subtle">Hotkey:</span>
             <button
               type="button"
-              class="px-2 py-1 rounded bg-surface-raised-base border border-border-base text-12-regular text-text-base font-mono"
+              class="px-2 py-1 border border-border-base text-12-regular text-text-base font-mono"
               classList={{
-                "ring-2 ring-border-focus-base": isCapturingKeybind(),
+                "border-border-focus-base": isCapturingKeybind(),
               }}
               onClick={() => {
                 setCapturedKeybind(voice.settings.keybind())
@@ -167,10 +166,10 @@ const VoiceSettingsPanel: Component = () => {
             <div class="flex gap-1">
               <button
                 type="button"
-                class="px-2 py-1 rounded text-12-regular"
+                class="px-2 py-1 text-12-regular"
                 classList={{
-                  "bg-surface-info-base/20 text-text-info-base": voice.settings.mode() === "toggle",
-                  "bg-surface-raised-base text-text-subtle hover:text-text-base": voice.settings.mode() !== "toggle",
+                  "text-text-strong": voice.settings.mode() === "toggle",
+                  "text-text-subtle hover:text-text-base": voice.settings.mode() !== "toggle",
                 }}
                 onClick={() => voice.settings.setMode("toggle")}
               >
@@ -178,11 +177,10 @@ const VoiceSettingsPanel: Component = () => {
               </button>
               <button
                 type="button"
-                class="px-2 py-1 rounded text-12-regular"
+                class="px-2 py-1 text-12-regular"
                 classList={{
-                  "bg-surface-info-base/20 text-text-info-base": voice.settings.mode() === "push-to-talk",
-                  "bg-surface-raised-base text-text-subtle hover:text-text-base":
-                    voice.settings.mode() !== "push-to-talk",
+                  "text-text-strong": voice.settings.mode() === "push-to-talk",
+                  "text-text-subtle hover:text-text-base": voice.settings.mode() !== "push-to-talk",
                 }}
                 onClick={() => voice.settings.setMode("push-to-talk")}
               >
@@ -197,47 +195,55 @@ const VoiceSettingsPanel: Component = () => {
 }
 
 export const SettingsDialog: Component<SettingsDialogProps> = (props) => {
-  const [tab, setTab] = createSignal<SettingsTab>(props.initialTab ?? "plugins")
+  const [tab, setTab] = createSignal<SettingsTab>(props.initialTab ?? "skills")
 
-  const tabs: Array<{ id: SettingsTab; label: string }> = [
-    { id: "plugins", label: "Plugins" },
-    { id: "mcp", label: "MCP" },
-    { id: "skills", label: "Skills" },
+  const tabs: Array<{ id: SettingsTab; label: string; icon?: string }> = [
+    { id: "skills", label: "Skills", icon: "sparkles" },
+    { id: "mcp", label: "MCP", icon: "plug" },
+    { id: "plugins", label: "Plugins", icon: "puzzle" },
     { id: "voice", label: "Voice" },
   ]
 
   return (
-    <Dialog title="Settings" description="Manage plugins, MCP servers, skills, and voice." size="lg">
-      <div class="flex flex-col gap-4 px-2.5 pb-3">
-        <Tabs
-          variant="alt"
-          value={tab()}
-          onChange={(value) => setTab(value as SettingsTab)}
-          class="flex flex-col gap-3"
-        >
-          <Tabs.List class="h-9">
-            {tabs.map((item) => (
-              <Tabs.Trigger value={item.id} hideCloseButton>
-                {item.label}
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-          <Tabs.Content value="plugins">
-            <div class="flex flex-col gap-4">
-              <ClaudePluginsPanel />
-              <OpenCodePluginsPanel />
-            </div>
-          </Tabs.Content>
-          <Tabs.Content value="mcp">
-            <McpSettingsPanel />
-          </Tabs.Content>
-          <Tabs.Content value="skills">
-            <SkillsPanel />
-          </Tabs.Content>
-          <Tabs.Content value="voice">
-            <VoiceSettingsPanel />
-          </Tabs.Content>
-        </Tabs>
+    <Dialog title="Settings" description="Manage skills, MCP servers, plugins, and voice." size="xl">
+      <div class="flex gap-4 px-2.5 pb-3 min-h-[520px]">
+        <nav class="flex flex-col gap-1 w-40 shrink-0 border-r border-border-base pr-4">
+          {tabs.map((item) => (
+            <button
+              type="button"
+              class="flex items-center gap-2.5 px-3 py-2 text-left text-13-medium transition-colors"
+              classList={{
+                "text-text-strong": tab() === item.id,
+                "text-text-subtle hover:text-text-base": tab() !== item.id,
+              }}
+              onClick={() => setTab(item.id)}
+            >
+              <Show when={item.icon}>
+                <Icon name={item.icon as any} size="small" class="shrink-0" />
+              </Show>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div class="flex-1 min-w-0 overflow-y-auto">
+          <SolidSwitch>
+            <Match when={tab() === "skills"}>
+              <SkillsPanel />
+            </Match>
+            <Match when={tab() === "mcp"}>
+              <McpSettingsPanel />
+            </Match>
+            <Match when={tab() === "plugins"}>
+              <div class="flex flex-col gap-4">
+                <ClaudePluginsPanel />
+                <OpenCodePluginsPanel />
+              </div>
+            </Match>
+            <Match when={tab() === "voice"}>
+              <VoiceSettingsPanel />
+            </Match>
+          </SolidSwitch>
+        </div>
       </div>
     </Dialog>
   )

@@ -28,6 +28,11 @@
     --dialog-width: 720px;
   }
 
+  &[data-size="xl"] {
+    --dialog-width: 860px;
+    --dialog-height: 640px;
+  }
+
   [data-slot="dialog-container"] {
     position: relative;
     z-index: 50;
