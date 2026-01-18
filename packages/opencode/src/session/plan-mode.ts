@@ -2,6 +2,7 @@ import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { Identifier } from "@/id/id"
 import { Log } from "@/util/log"
+import { Session } from "."
 import z from "zod"
 
 export namespace PlanMode {
@@ -95,6 +96,14 @@ export namespace PlanMode {
       approved: input.approved,
     })
     pendingPlan.resolve(input.approved)
+    if (!input.approved) return true
+    const sessionID = pendingPlan.info.sessionID
+    void Session.update(sessionID, (session) => {
+      if (session.agent === "build") return
+      session.agent = "build"
+    }).catch((error) => {
+      log.error("failed to update session agent after plan approval", { error, sessionID })
+    })
     return true
   }
 
