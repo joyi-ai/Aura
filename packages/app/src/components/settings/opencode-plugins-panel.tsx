@@ -1,7 +1,6 @@
-import { Show, createMemo, createSignal, type Component } from "solid-js"
+import { createMemo, createSignal, type Component } from "solid-js"
 import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
-import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -144,17 +143,12 @@ export const OpenCodePluginsPanel: Component = () => {
 
   return (
     <div class="flex flex-col gap-2">
-      <div class="flex items-center justify-between px-2.5 pb-2">
-        <div class="text-12-regular text-text-weak">
-          OpenCode plugins are loaded from `.opencode/plugin`, `~/.config/opencode/plugin`, and your config.
-        </div>
-      </div>
       <List
-        search={{ placeholder: "Search OpenCode plugins", autofocus: false }}
-        emptyMessage="No OpenCode plugins found"
+        search={{ placeholder: "Search", autofocus: false }}
+        emptyMessage="No plugins found"
         key={(x) => x?.spec ?? ""}
         items={items()}
-        filterKeys={["name", "source", "spec"]}
+        filterKeys={["name", "spec"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         onSelect={(x) => {
           if (x) togglePlugin(x, !x.enabled)
@@ -162,21 +156,8 @@ export const OpenCodePluginsPanel: Component = () => {
       >
         {(item) => (
           <div class="w-full flex items-center justify-between gap-x-3">
-            <div class="flex flex-col gap-0.5 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-13-regular text-text-strong">{item.name}</span>
-                <Tag>{item.source}</Tag>
-                <Show when={!item.enabled}>
-                  <span class="text-11-regular text-text-weaker">disabled</span>
-                </Show>
-              </div>
-              <Show when={item.location}>
-                <span class="text-11-regular text-text-weaker truncate">{item.location}</span>
-              </Show>
-            </div>
-            <div class="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <Switch checked={item.enabled} disabled={saving() === item.spec} onChange={() => togglePlugin(item, !item.enabled)} />
-            </div>
+            <span class="truncate text-13-regular text-text-strong">{item.name}</span>
+            <Switch checked={item.enabled} disabled={saving() === item.spec} onChange={() => togglePlugin(item, !item.enabled)} />
           </div>
         )}
       </List>

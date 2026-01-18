@@ -1,7 +1,6 @@
 import { Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
-import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -147,21 +146,12 @@ export const SkillsPanel: Component = () => {
         {(skill) => (
           <div class="w-full flex items-center justify-between gap-x-3">
             <div class="flex flex-col gap-0.5 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-13-regular text-text-strong">{skill.name}</span>
-                <Tag>{skill.source}</Tag>
-                <Show when={!skill.enabled}>
-                  <span class="text-11-regular text-text-weaker">disabled</span>
-                </Show>
-              </div>
-              <div class="text-12-regular text-text-weak truncate">{skill.description}</div>
-              <Show when={skill.location}>
-                <div class="text-11-regular text-text-weaker truncate">{skill.location}</div>
+              <span class="truncate text-13-regular text-text-strong">{skill.name}</span>
+              <Show when={skill.description}>
+                <span class="text-12-regular text-text-weak truncate">{skill.description}</span>
               </Show>
             </div>
-            <div class="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <Switch checked={skill.enabled} disabled={saving() === skill.name} onChange={() => toggleSkill(skill.name, !skill.enabled)} />
-            </div>
+            <Switch checked={skill.enabled} disabled={saving() === skill.name} onChange={() => toggleSkill(skill.name, !skill.enabled)} />
           </div>
         )}
       </List>

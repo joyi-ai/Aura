@@ -9,7 +9,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { Config } from "@opencode-ai/sdk/v2/client"
-import { DialogEditMcp, DialogRemoveMcp, isMcpConfigured, type McpConfigured } from "./dialog-edit-mcp"
+import { DialogEditMcp, isMcpConfigured, type McpConfigured } from "./dialog-edit-mcp"
 
 export const McpSettingsPanel: Component = () => {
   const sync = useSync()
@@ -84,8 +84,6 @@ export const McpSettingsPanel: Component = () => {
     setLoading(null)
   }
 
-  const enabledCount = createMemo(() => items().filter((i) => i.status === "connected").length)
-  const totalCount = createMemo(() => items().length)
   const showEdit = (name?: string, entry?: McpConfigured) => {
     dialog.show(() => (
       <SDKProvider directory={sdk.directory}>
@@ -95,24 +93,12 @@ export const McpSettingsPanel: Component = () => {
       </SDKProvider>
     ))
   }
-  const showRemove = (name: string) => {
-    dialog.show(() => (
-      <SDKProvider directory={sdk.directory}>
-        <SyncProvider>
-          <DialogRemoveMcp name={name} />
-        </SyncProvider>
-      </SDKProvider>
-    ))
-  }
 
   return (
     <div class="flex flex-col gap-2">
-      <div class="flex items-center justify-between px-2.5 pb-2">
-        <div class="text-12-regular text-text-weak">
-          {enabledCount()} of {totalCount()} enabled - Synced to OpenCode, Claude Code, and Codex
-        </div>
+      <div class="flex justify-end px-2.5 pb-2">
         <Button size="small" icon="plus" onClick={() => showEdit()}>
-          Add MCP
+          Add
         </Button>
       </div>
       <List
@@ -120,7 +106,7 @@ export const McpSettingsPanel: Component = () => {
         emptyMessage="No MCPs configured"
         key={(x) => x?.name ?? ""}
         items={items()}
-        filterKeys={["name", "status", "type"]}
+        filterKeys={["name", "type"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         onSelect={(x) => {
           if (x) toggle(x.name)
@@ -129,39 +115,12 @@ export const McpSettingsPanel: Component = () => {
         {(i) => {
           const mcpStatus = () => i.state
           const status = () => mcpStatus()?.status
-          const error = () => {
-            const s = mcpStatus()
-            return s?.status === "failed" || s?.status === "needs_client_registration" ? s.error : undefined
-          }
           const enabled = () => status() === "connected"
           return (
             <div class="w-full flex items-center justify-between gap-x-3">
               <div class="flex flex-col gap-0.5 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="truncate">{i.name}</span>
-                  <span class="text-11-regular text-text-weaker">{i.entry.type}</span>
-                  <Show when={status() === "connected"}>
-                    <span class="text-11-regular text-text-weaker">connected</span>
-                  </Show>
-                  <Show when={status() === "failed"}>
-                    <span class="text-11-regular text-text-weaker">failed</span>
-                  </Show>
-                  <Show when={status() === "needs_auth"}>
-                    <span class="text-11-regular text-text-weaker">needs auth</span>
-                  </Show>
-                  <Show when={status() === "needs_client_registration"}>
-                    <span class="text-11-regular text-text-weaker">needs client registration</span>
-                  </Show>
-                  <Show when={status() === "disabled"}>
-                    <span class="text-11-regular text-text-weaker">disabled</span>
-                  </Show>
-                  <Show when={loading() === i.name}>
-                    <span class="text-11-regular text-text-weak">...</span>
-                  </Show>
-                </div>
-                <Show when={error()}>
-                  <span class="text-11-regular text-text-weaker truncate">{error()}</span>
-                </Show>
+                <span class="truncate text-13-regular text-text-strong">{i.name}</span>
+                <span class="text-11-regular text-text-weaker">{i.entry.type}</span>
               </div>
               <div class="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                 <Show when={status() === "needs_auth"}>
@@ -175,7 +134,6 @@ export const McpSettingsPanel: Component = () => {
                   </Button>
                 </Show>
                 <IconButton icon="edit-small-2" variant="ghost" onClick={() => showEdit(i.name, i.entry)} />
-                <IconButton icon="circle-x" variant="ghost" onClick={() => showRemove(i.name)} />
                 <Switch checked={enabled()} disabled={loading() === i.name} onChange={() => toggle(i.name)} />
               </div>
             </div>
