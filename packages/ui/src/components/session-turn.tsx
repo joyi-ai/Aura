@@ -3,6 +3,7 @@ import {
   Message as MessageType,
   Part as PartType,
   type PermissionRequest,
+  type Todo,
   ReasoningPart,
   TextPart,
   ToolPart,
@@ -60,6 +61,8 @@ import { Button } from "./button"
 
 import { Spinner } from "./spinner"
 
+import { SessionTodoFooter } from "./session-todo-footer"
+
 import { createStore } from "solid-js/store"
 
 import { DateTime, DurationUnit, Interval } from "luxon"
@@ -110,7 +113,7 @@ function computeStatusFromPart(part: PartType | undefined): string | undefined {
 
     const match = text.trimStart().match(/^\*\*(.+?)\*\*/)
 
-    if (match) return `Thinking · ${match[1].trim()}`
+    if (match) return `Thinking \u00b7 ${match[1].trim()}`
 
     return "Thinking"
   }
@@ -283,6 +286,12 @@ export function SessionTurn(
     hideTitle?: boolean
 
     disableSticky?: boolean
+
+    todos?: Todo[]
+
+    todoCollapsed?: boolean
+
+    onTodoToggle?: () => void
 
     onStepsExpandedToggle?: () => void
 
@@ -975,6 +984,16 @@ export function SessionTurn(
 
   const working = createMemo(() => status().type !== "idle" && isLastUserMessage())
 
+  const stepsVisible = createMemo(() => taskAgents().length > 0 || stepsToolParts().length > 0)
+
+  const todoVisible = createMemo(() => {
+    if (!props.todos) return false
+    if (!isLastUserMessage()) return false
+    return props.todos.some((todo) => todo.status !== "completed")
+  })
+
+  const panelVisible = createMemo(() => (working() && stepsVisible()) || todoVisible())
+
   const retry = createMemo(() => {
     const s = status()
 
@@ -1246,14 +1265,16 @@ export function SessionTurn(
                             {displayStatus() ?? "Considering next steps"}
                           </span>
 
-                          <span>·</span>
+                          <span>{"\u00b7"}</span>
 
                           <span>{store.duration}</span>
                         </Button>
                       </div>
+                    </Show>
 
-                      <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
-                        <div data-slot="session-turn-assistant-working">
+                    <Show when={panelVisible()}>
+                      <div data-slot="session-turn-assistant-working">
+                        <Show when={working() && stepsVisible()}>
                           <div data-slot="session-turn-steps-group">
                             <Show when={taskAgents().length > 0}>
                               <div data-slot="session-turn-task-agents">
@@ -1308,7 +1329,7 @@ export function SessionTurn(
                                               <Show when={store.reasoningLoading}>
                                                 <Spinner />
                                               </Show>
-                                              <Show when={!store.reasoningLoading}>Loading reasoning…</Show>
+                                              <Show when={!store.reasoningLoading}>Loading reasoning...</Show>
                                             </div>
                                           </div>
                                         }
@@ -1332,8 +1353,16 @@ export function SessionTurn(
                               </div>
                             </Show>
                           </div>
-                        </div>
-                      </Show>
+                        </Show>
+
+                        <Show when={todoVisible()}>
+                          <SessionTodoFooter
+                            todos={props.todos ?? []}
+                            collapsed={props.todoCollapsed}
+                            onToggleCollapse={props.onTodoToggle}
+                          />
+                        </Show>
+                      </div>
                     </Show>
 
                     <Show when={inlineToolParts().length > 0}>

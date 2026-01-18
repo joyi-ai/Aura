@@ -2,12 +2,15 @@ import { Show, For, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, Todo } from "@opencode-ai/sdk/v2/client"
 
 export interface MobileViewProps {
   sessionId?: string
   visibleUserMessages: Accessor<UserMessage[]>
   lastUserMessage: Accessor<UserMessage | undefined>
+  todos?: Todo[]
+  todoCollapsed?: boolean
+  onTodoToggle?: () => void
   working: Accessor<boolean>
   composerHeight: Accessor<number>
   scrollRef?: (el: HTMLElement | undefined) => void
@@ -47,6 +50,9 @@ export function MobileView(props: MobileViewProps) {
                 messageID={message.id}
                 lastUserMessageID={props.lastUserMessage()?.id}
                 stepsExpanded={store.mobileStepsExpanded[message.id] ?? false}
+                todos={props.todos}
+                todoCollapsed={props.todoCollapsed}
+                onTodoToggle={props.onTodoToggle}
                 onStepsExpandedToggle={() => setStore("mobileStepsExpanded", message.id, (x) => !x)}
                 hideTitle={true}
                 onUserInteracted={props.onUserInteracted}

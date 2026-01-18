@@ -10,7 +10,6 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
-import { SessionTodoFooter } from "@opencode-ai/ui/session-todo-footer"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DateTime } from "luxon"
@@ -593,6 +592,9 @@ export function SessionPane(props: SessionPaneProps) {
                         messageID={message.id}
                         lastUserMessageID={sessionMessages.lastUserMessage()?.id}
                         stepsExpanded={store.stepsExpanded[message.id] ?? false}
+                        todos={todos()}
+                        todoCollapsed={todoCollapsed()}
+                        onTodoToggle={() => setTodoCollapsed((c) => !c)}
                         onStepsExpandedToggle={() => setStore("stepsExpanded", message.id, (x) => !x)}
                         hideTitle={true}
                         actions={{
@@ -616,12 +618,6 @@ export function SessionPane(props: SessionPaneProps) {
                 ref={setSpacerEl}
                 class="shrink-0"
                 style={{ height: `${spacer()}px` }}
-              />
-              {/* Todo footer - sticky at bottom, hides when all complete */}
-              <SessionTodoFooter
-                todos={todos()}
-                collapsed={todoCollapsed()}
-                onToggleCollapse={() => setTodoCollapsed((c) => !c)}
               />
             </div>
           </div>
@@ -749,6 +745,9 @@ export function SessionPane(props: SessionPaneProps) {
           sessionId={sessionId()}
           visibleUserMessages={sessionMessages.visibleUserMessages}
           lastUserMessage={sessionMessages.lastUserMessage}
+          todos={todos()}
+          todoCollapsed={todoCollapsed()}
+          onTodoToggle={() => setTodoCollapsed((c) => !c)}
           working={working}
           composerHeight={scrollBehavior.composerHeight}
           scrollRef={setMobileScrollEl}
