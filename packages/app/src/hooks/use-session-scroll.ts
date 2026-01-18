@@ -42,7 +42,6 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   let pendingSnap = false
   let lastMessageCount = 0
   let messageCount = 0
-  let previousMessageCount = 0
   const lastMessageId = { value: "" }
   const lastMessageIdAtSnap = { value: "" }
   const [containerHeight, setContainerHeight] = createSignal(0)
@@ -81,7 +80,6 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     const idChanged = currentId !== lastMessageId.value
     if (!countChanged && !idChanged) return
     if (countChanged) {
-      previousMessageCount = messageCount
       messageCount = currentCount
     }
     if (idChanged) lastMessageId.value = currentId
@@ -202,7 +200,6 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       mutationObserver = new MutationObserver(handleMutation)
       mutationObserver.observe(el, { childList: true, subtree: true })
       messageCount = getMessageCount()
-      previousMessageCount = messageCount
       lastMessageCount = messageCount
       lastMessageId.value = getLastMessageId()
       // Track container height for spacer calculation
@@ -237,8 +234,9 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     if (requested) {
       // Clear the request immediately so we don't process it again
       options.clearSnapRequest()
-      // Use the previous observed count to handle requests that fire after DOM update
-      lastMessageCount = previousMessageCount
+      // Snapshot current message state so we only snap on the next new message
+      updateMessageState()
+      lastMessageCount = messageCount
       lastMessageIdAtSnap.value = lastMessageId.value
       pendingSnap = true
       userScrolled = false

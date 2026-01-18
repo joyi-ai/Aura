@@ -239,7 +239,6 @@ export function SessionPane(props: SessionPaneProps) {
   // Scroll behavior for session pane (shared between desktop and mobile)
   const scrollBehavior = useScrollBehavior(props.paneId, true)
 
-  // Desktop scroll behavior
   const sessionScroll = useSessionScroll({
     working,
     composerHeight: scrollBehavior.composerHeight,
@@ -247,8 +246,27 @@ export function SessionPane(props: SessionPaneProps) {
     clearSnapRequest: scrollBehavior.clearSnapRequest,
     onUserScrolledAway: scrollBehavior.setUserScrolledAway,
   })
+  const mdQuery = window.matchMedia("(min-width: 768px)")
+  const [isDesktop, setIsDesktop] = createSignal(mdQuery.matches)
+  const handleViewportChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+  mdQuery.addEventListener("change", handleViewportChange)
+  onCleanup(() => mdQuery.removeEventListener("change", handleViewportChange))
+
+  const [desktopScrollEl, setDesktopScrollEl] = createSignal<HTMLElement | undefined>(undefined)
+  const [desktopContentEl, setDesktopContentEl] = createSignal<HTMLElement | undefined>(undefined)
+  const [mobileScrollEl, setMobileScrollEl] = createSignal<HTMLElement | undefined>(undefined)
+  const [mobileContentEl, setMobileContentEl] = createSignal<HTMLElement | undefined>(undefined)
   const [scrollEl, setScrollEl] = createSignal<HTMLElement | undefined>(undefined)
   const lastScrollTop = { value: 0 }
+
+  createEffect(() => {
+    const useDesktop = isDesktop()
+    const scroll = useDesktop ? desktopScrollEl() : mobileScrollEl()
+    const content = useDesktop ? desktopContentEl() : mobileContentEl()
+    setScrollEl(scroll)
+    sessionScroll.scrollRef(scroll)
+    sessionScroll.contentRef(content)
+  })
 
 
   createEffect(() => {
@@ -436,15 +454,12 @@ export function SessionPane(props: SessionPaneProps) {
             wide={true}
           />
           <div
-            ref={(el) => {
-              setScrollEl(el)
-              sessionScroll.scrollRef(el)
-            }}
+            ref={setDesktopScrollEl}
             data-scroll-container="session-pane"
             class="flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar"
             onScroll={handleScroll}
           >
-            <div ref={sessionScroll.contentRef} class="flex flex-col">
+            <div ref={setDesktopContentEl} class="flex flex-col">
               <div class="flex flex-col gap-4 pt-6">
 
                 <For each={renderedUserMessages()}>
@@ -612,6 +627,8 @@ export function SessionPane(props: SessionPaneProps) {
           lastUserMessage={sessionMessages.lastUserMessage}
           working={working}
           composerHeight={scrollBehavior.composerHeight}
+          scrollRef={setMobileScrollEl}
+          contentRef={setMobileContentEl}
           onScroll={handleScroll}
           messageActions={{
             onEdit: messageActions.editMessage,
