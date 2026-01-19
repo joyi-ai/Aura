@@ -228,7 +228,11 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       updatePane(id: string, updates: Partial<Omit<PaneConfig, "id">>) {
         const index = store.panes.findIndex((p) => p.id === id)
         if (index === -1) return
-        setStore("panes", index, (pane) => ({ ...pane, ...updates }))
+        // Update individual properties to preserve object reference
+        // This prevents <For> from remounting components when pane data changes
+        for (const key of Object.keys(updates) as Array<keyof typeof updates>) {
+          setStore("panes", index, key, updates[key])
+        }
       },
 
       setFocused(id: string) {
