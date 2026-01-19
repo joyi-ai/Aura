@@ -39,12 +39,33 @@ export const Splash = (props: { class?: string }) => {
     <svg
       data-component="logo-splash"
       classList={{ [props.class ?? ""]: !!props.class }}
-      viewBox="0 0 80 100"
+      viewBox="0 0 512 512"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M60 80H20V40H60V80Z" fill="var(--icon-base)" />
-      <path d="M60 20H20V80H60V20ZM80 100H0V0H80V100Z" fill="var(--icon-strong-base)" />
+      <defs>
+        <linearGradient id="splash-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0d0d1a" />
+          <stop offset="100%" stop-color="#1a1a2e" />
+        </linearGradient>
+        <filter id="splash-soft-blur" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="40" result="blur" />
+        </filter>
+        <filter id="splash-med-blur" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="25" result="blur" />
+        </filter>
+      </defs>
+      <rect width="512" height="512" rx="112" fill="url(#splash-bg)" />
+      <ellipse cx="140" cy="160" rx="160" ry="140" fill="#7c3aed" opacity="0.55" filter="url(#splash-soft-blur)" />
+      <ellipse cx="390" cy="140" rx="150" ry="160" fill="#ec4899" opacity="0.45" filter="url(#splash-soft-blur)" />
+      <ellipse cx="120" cy="375" rx="170" ry="150" fill="#3b82f6" opacity="0.4" filter="url(#splash-soft-blur)" />
+      <ellipse cx="400" cy="360" rx="140" ry="160" fill="#06b6d4" opacity="0.45" filter="url(#splash-soft-blur)" />
+      <ellipse cx="256" cy="256" rx="130" ry="130" fill="#a855f7" opacity="0.35" filter="url(#splash-med-blur)" />
+      <path
+        d="M256 100 L360 390 L320 390 L300 330 L212 330 L192 390 L152 390 L256 100 Z M256 170 L228 290 L284 290 L256 170 Z"
+        fill="white"
+        fill-rule="evenodd"
+      />
     </svg>
   )
 }
