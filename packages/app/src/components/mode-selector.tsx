@@ -11,6 +11,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import type { ModeDefinition } from "@/modes/types"
 import { DialogEditMode } from "./dialog-edit-mode"
+import { DialogSelectProvider } from "./dialog-select-provider"
 
 const InstallModeDialog: Component<{ mode: ModeDefinition; onInstalled?: () => void }> = (props) => {
   const dialog = useDialog()
@@ -163,6 +164,17 @@ export const ModeSelector: Component = () => {
           class="w-full text-left px-2 py-1.5 text-12-regular text-text-weak opacity-60 cursor-not-allowed"
         >
           Create custom mode (coming soon)
+        </button>
+        <button
+          type="button"
+          class="w-full flex items-center gap-2 px-2 py-1.5 text-12-regular text-text-weak hover:bg-surface-raised-base-hover rounded-md"
+          onClick={() => {
+            setOpen(false)
+            dialog.show(() => <DialogSelectProvider />)
+          }}
+        >
+          <Icon name="plug" size="small" />
+          Connect provider
         </button>
       </div>
     </Popover>

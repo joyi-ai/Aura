@@ -13,6 +13,7 @@ import { useFloatingSelector } from "@/context/floating-selector"
 import { popularProviders } from "@/hooks/use-providers"
 import type { ModeDefinition } from "@/modes/types"
 import { DialogEditMode } from "./dialog-edit-mode"
+import { DialogSelectProvider } from "./dialog-select-provider"
 
 // Inline InstallModeDialog - same as in mode-selector.tsx
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -357,6 +358,17 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                   }}
                 </For>
               </div>
+              <button
+                type="button"
+                class="flex items-center gap-1 px-1 py-0.5 text-11-regular text-text-weak hover:text-text-base rounded shrink-0"
+                onClick={() => {
+                  handleClose()
+                  dialog.show(() => <DialogSelectProvider />)
+                }}
+              >
+                <Icon name="plug" size="small" />
+                Connect provider
+              </button>
             </div>
 
             {/* AGENT COLUMN */}
