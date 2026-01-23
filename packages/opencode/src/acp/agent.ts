@@ -561,7 +561,6 @@ export namespace ACP {
           .list(
             {
               directory: params.cwd ?? undefined,
-              roots: true,
             },
             { throwOnError: true },
           )

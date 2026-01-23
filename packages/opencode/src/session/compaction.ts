@@ -155,7 +155,7 @@ export namespace SessionCompaction {
       tools: {},
       system: [],
       messages: [
-        ...MessageV2.toModelMessages(input.messages, model),
+        ...MessageV2.toModelMessage(input.messages),
         {
           role: "user",
           content: [

@@ -276,16 +276,12 @@ export const SessionRoutes = lazy(() =>
         const sessionID = c.req.valid("param").sessionID
         const updates = c.req.valid("json")
 
-        const updatedSession = await Session.update(
-          sessionID,
-          (session) => {
-            if (updates.title !== undefined) {
-              session.title = updates.title
-            }
-            if (updates.time?.archived !== undefined) session.time.archived = updates.time.archived
-          },
-          { touch: false },
-        )
+        const updatedSession = await Session.update(sessionID, (session) => {
+          if (updates.title !== undefined) {
+            session.title = updates.title
+          }
+          if (updates.time?.archived !== undefined) session.time.archived = updates.time.archived
+        })
 
         return c.json(updatedSession)
       },

@@ -25,7 +25,7 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   triggerVariant?: "settings"
 }
 
-export function Select<T>(props: SelectProps<T> & ButtonProps) {
+export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
   const [local, others] = splitProps(props, [
     "class",
     "classList",

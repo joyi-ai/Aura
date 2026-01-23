@@ -18,22 +18,18 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
   const [menuPosition, setMenuPosition] = createSignal({ x: 0, y: 0 })
   const [blurEnabled, setBlurEnabled] = createSignal(false)
 
-  const isDefaultTitle = () => {
-    const number = props.terminal.titleNumber
-    if (!Number.isFinite(number) || number <= 0) return false
+  const defaultTitleNumber = () => {
     const match = props.terminal.title.match(/^Terminal (\d+)$/)
-    if (!match) return false
+    if (!match) return undefined
     const parsed = Number(match[1])
-    if (!Number.isFinite(parsed) || parsed <= 0) return false
-    return parsed === number
+    if (!Number.isFinite(parsed) || parsed <= 0) return undefined
+    return parsed
   }
 
   const label = () => {
     language.locale()
-    if (props.terminal.title && !isDefaultTitle()) return props.terminal.title
-
-    const number = props.terminal.titleNumber
-    if (Number.isFinite(number) && number > 0) return language.t("terminal.title.numbered", { number })
+    const number = defaultTitleNumber()
+    if (number) return language.t("terminal.title.numbered", { number })
     if (props.terminal.title) return props.terminal.title
     return language.t("terminal.title")
   }

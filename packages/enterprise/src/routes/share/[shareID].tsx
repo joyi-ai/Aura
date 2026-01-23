@@ -295,7 +295,6 @@ export default function () {
                                 {(message) => (
                                   <SessionTurn
                                     sessionID={data().sessionID}
-                                    sessionTitle={info().title}
                                     messageID={message.id}
                                     stepsExpanded={store.expandedSteps[message.id] ?? false}
                                     onStepsExpandedToggle={() => setStore("expandedSteps", message.id, (v) => !v)}

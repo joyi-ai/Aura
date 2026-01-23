@@ -1,7 +1,8 @@
 import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Component, For, createMemo, type JSX } from "solid-js"
-import { useGlobalSync } from "@/context/global-sync"
+import { useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 
 type PermissionAction = "allow" | "ask" | "deny"
@@ -131,7 +132,8 @@ function getRuleDefault(value: unknown): PermissionAction | undefined {
 }
 
 export const SettingsPermissions: Component = () => {
-  const globalSync = useGlobalSync()
+  const sync = useSync()
+  const sdk = useSDK()
   const language = useLanguage()
 
   const actions = createMemo(
@@ -143,7 +145,7 @@ export const SettingsPermissions: Component = () => {
   )
 
   const permission = createMemo(() => {
-    return toMap(globalSync.data.config.permission)
+    return toMap(sync.data.config.permission)
   })
 
   const actionFor = (id: string): PermissionAction => {
@@ -158,16 +160,16 @@ export const SettingsPermissions: Component = () => {
   }
 
   const setPermission = async (id: string, action: PermissionAction) => {
-    const before = globalSync.data.config.permission
+    const before = sync.data.config.permission
     const map = toMap(before)
     const existing = map[id]
 
     const nextValue =
       existing && typeof existing === "object" && !Array.isArray(existing) ? { ...existing, "*": action } : action
 
-    globalSync.set("config", "permission", { ...map, [id]: nextValue })
-    globalSync.updateConfig({ permission: { [id]: nextValue } }).catch((err: unknown) => {
-      globalSync.set("config", "permission", before)
+    sync.set("config", "permission", { ...map, [id]: nextValue })
+    sdk.client.config.update({ config: { permission: { [id]: nextValue } } }).catch((err: unknown) => {
+      sync.set("config", "permission", before)
       const message = err instanceof Error ? err.message : String(err)
       showToast({ title: language.t("settings.permissions.toast.updateFailed.title"), description: message })
     })
