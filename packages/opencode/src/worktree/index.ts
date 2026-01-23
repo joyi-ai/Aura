@@ -8,6 +8,7 @@ import { Global } from "@/global"
 import { Instance } from "@/project/instance"
 import { Project } from "@/project/project"
 import { State } from "@/project/state"
+import { Storage } from "../storage/storage"
 
 const log = Log.create({ service: "worktree" })
 
@@ -192,6 +193,18 @@ export namespace Worktree {
     return path.normalize(path.join(Global.Path.data, "worktree"))
   }
 
+  function managedProjectID(directory: string): string | undefined {
+    const root = managedRoot()
+    const normalized = path.normalize(directory)
+    const rootKey = normalizeCase(root)
+    const candidate = normalizeCase(normalized)
+    if (!candidate.startsWith(rootKey + path.sep)) return
+    const relative = normalized.slice(root.length + 1)
+    const parts = relative.split(path.sep).filter(Boolean)
+    if (parts.length < 2) return
+    return parts[0]
+  }
+
   function normalizeCase(input: string): string {
     if (process.platform !== "win32") return input
     return input.toLowerCase()
@@ -221,14 +234,23 @@ export namespace Worktree {
   }
 
   async function unsandbox(directory: string) {
-    const items = await Project.list()
     const target = normalizePath(directory)
-    for (const project of items) {
+    const managed = managedProjectID(directory)
+    const keys = await Storage.list(["project"])
+    const entries = await Promise.all(
+      keys.map((key) => Storage.read<Project.Info>(key).catch(() => undefined)),
+    )
+    const ids = new Set<string>()
+    for (const project of entries) {
+      if (!project?.id) continue
       const sandboxes = project.sandboxes ?? []
-      for (const sandbox of sandboxes) {
-        if (normalizePath(sandbox) !== target) continue
-        await Project.removeSandbox(project.id, sandbox)
-      }
+      const isManaged = managed !== undefined && project.id === managed
+      const hasMatch = sandboxes.some((sandbox) => normalizePath(sandbox) === target)
+      if (!isManaged && !hasMatch) continue
+      ids.add(project.id)
+    }
+    for (const projectID of ids) {
+      await Project.removeSandbox(projectID, directory)
     }
   }
 
