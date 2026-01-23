@@ -888,6 +888,7 @@ export namespace Server {
                       z
                         .object({
                           home: z.string(),
+                          data: z.string(),
                           state: z.string(),
                           config: z.string(),
                           directory: z.string(),
@@ -904,6 +905,7 @@ export namespace Server {
           async (c) => {
             return c.json({
               home: Global.Path.home,
+              data: Global.Path.data,
               state: Global.Path.state,
               config: Global.Path.config,
               directory: Instance.directory,

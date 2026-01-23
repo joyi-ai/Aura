@@ -195,12 +195,12 @@ export function HomeContent(props: HomeContentProps) {
     }
   })
 
-  // Check if a path is a managed worktree (stored under {state}/worktree/)
+  // Check if a path is a managed worktree (stored under {data}/worktree/)
   const isManagedWorktree = (dir: string) => {
-    const stateDir = sync.data.path.state
-    if (!stateDir) return false
+    const dataDir = (sync.data.path as { data?: string }).data
+    if (!dataDir) return false
     const normalized = normalizeDirectoryKey(dir)
-    const worktreeRoot = normalizeDirectoryKey(stateDir + "/worktree/")
+    const worktreeRoot = normalizeDirectoryKey(dataDir + "/worktree/")
     return normalized.startsWith(worktreeRoot)
   }
 

@@ -326,10 +326,13 @@ export namespace Project {
       draft.sandboxes.push(sandbox)
       draft.time.updated = Date.now()
     })
+    // Resolve sandboxes to include filesystem-based worktrees in the event
+    const resolvedSandboxes = await resolveSandboxes(result)
     GlobalBus.emit("event", {
+      directory: "global",
       payload: {
         type: Event.Updated.type,
-        properties: result,
+        properties: { ...result, sandboxes: resolvedSandboxes },
       },
     })
     return result
@@ -345,10 +348,13 @@ export namespace Project {
       draft.sandboxes = draft.sandboxes.filter((dir) => normalizePathKey(dir) !== normalizedSandbox)
       draft.time.updated = Date.now()
     })
+    // Resolve sandboxes to include filesystem-based worktrees in the event
+    const resolvedSandboxes = await resolveSandboxes(result)
     GlobalBus.emit("event", {
+      directory: "global",
       payload: {
         type: Event.Updated.type,
-        properties: result,
+        properties: { ...result, sandboxes: resolvedSandboxes },
       },
     })
     return result
