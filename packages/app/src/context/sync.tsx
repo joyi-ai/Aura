@@ -1,4 +1,4 @@
-import { batch, createMemo } from "solid-js"
+import { batch, createMemo, createRoot } from "solid-js"
 import { createStore, produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import { Binary } from "@opencode-ai/util/binary"
 import { retry } from "@opencode-ai/util/retry"
@@ -8,6 +8,66 @@ import { useSDK } from "./sdk"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 export type { SkillInfo, ClaudePluginInfo }
+
+type SharedState = {
+  meta: {
+    limit: Record<string, number>
+    complete: Record<string, boolean>
+    loading: Record<string, boolean>
+    parts: Record<string, boolean>
+  }
+  setMeta: SetStoreFunction<{
+    limit: Record<string, number>
+    complete: Record<string, boolean>
+    loading: Record<string, boolean>
+    parts: Record<string, boolean>
+  }>
+  inflight: Map<string, Promise<void>>
+  inflightDiff: Map<string, Promise<void>>
+  inflightTodo: Map<string, Promise<void>>
+  inflightParts: Map<string, Promise<void>>
+  inflightReasoning: Map<string, Promise<void>>
+  partLimit: number
+  partOrder: Map<string, string[]>
+}
+
+const sharedStates = new Map<string, SharedState>()
+
+function createSharedState() {
+  const inflight = new Map<string, Promise<void>>()
+  const inflightDiff = new Map<string, Promise<void>>()
+  const inflightTodo = new Map<string, Promise<void>>()
+  const inflightParts = new Map<string, Promise<void>>()
+  const inflightReasoning = new Map<string, Promise<void>>()
+  const partLimit = 50
+  const partOrder = new Map<string, string[]>()
+  const [meta, setMeta] = createStore({
+    limit: {} as Record<string, number>,
+    complete: {} as Record<string, boolean>,
+    loading: {} as Record<string, boolean>,
+    parts: {} as Record<string, boolean>,
+  })
+  return {
+    meta,
+    setMeta,
+    inflight,
+    inflightDiff,
+    inflightTodo,
+    inflightParts,
+    inflightReasoning,
+    partLimit,
+    partOrder,
+  }
+}
+
+function getSharedState(directory: string) {
+  const key = directory ?? ""
+  const existing = sharedStates.get(key)
+  if (existing) return existing
+  const created = createRoot(() => createSharedState())
+  sharedStates.set(key, created)
+  return created
+}
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
@@ -26,19 +86,19 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const absolute = (path: string) => (store().path.directory + "/" + path).replace("//", "/")
     const chunk = 50
     const initialHistoryLimit = 6
-    const inflight = new Map<string, Promise<void>>()
-    const inflightDiff = new Map<string, Promise<void>>()
-    const inflightTodo = new Map<string, Promise<void>>()
-    const inflightParts = new Map<string, Promise<void>>()
-    const inflightReasoning = new Map<string, Promise<void>>()
-    const partLimit = 50
-    const partOrder = new Map<string, string[]>()
-    const [meta, setMeta] = createStore({
-      limit: {} as Record<string, number>,
-      complete: {} as Record<string, boolean>,
-      loading: {} as Record<string, boolean>,
-      parts: {} as Record<string, boolean>,
-    })
+    const shared = createMemo(() => getSharedState(sdk.directory))
+    const getMeta = () => shared().meta
+    const setMeta = ((...args: any[]) => {
+      const setter = shared().setMeta as (...args: any[]) => void
+      return setter(...args)
+    }) as SetStoreFunction<SharedState["meta"]>
+    const inflight = () => shared().inflight
+    const inflightDiff = () => shared().inflightDiff
+    const inflightTodo = () => shared().inflightTodo
+    const inflightParts = () => shared().inflightParts
+    const inflightReasoning = () => shared().inflightReasoning
+    const partLimit = () => shared().partLimit
+    const partOrder = () => shared().partOrder
 
     type SetState = SetStoreFunction<ChildStore>
 
@@ -87,15 +147,17 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     const recordParts = (setTarget: SetState, sessionID: string, messageID: string) => {
-      const current = partOrder.get(sessionID) ?? []
+      const order = partOrder()
+      const limit = partLimit()
+      const current = order.get(sessionID) ?? []
       const next = current.filter((id) => id !== messageID)
       next.push(messageID)
-      partOrder.set(sessionID, next)
-      if (next.length <= partLimit) return
-      const overflow = next.length - partLimit
+      order.set(sessionID, next)
+      if (next.length <= limit) return
+      const overflow = next.length - limit
       const remove = next.slice(0, overflow)
       const trimmed = next.slice(overflow)
-      partOrder.set(sessionID, trimmed)
+      order.set(sessionID, trimmed)
       setTarget(
         "part",
         produce((draft) => {
@@ -157,6 +219,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     const hydrateMessages = (sessionID: string) => {
+      const meta = getMeta()
       if (meta.limit[sessionID] !== undefined) return
 
       const messages = store().message[sessionID]
@@ -177,6 +240,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       excludePartTypes?: string[]
     }) => {
       const sessionID = input.sessionID
+      const meta = getMeta()
       if (meta.loading[sessionID]) return
 
       setMeta("loading", sessionID, true)
@@ -229,6 +293,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               }
               setMeta("parts", sessionID, true)
             }
+            const meta = getMeta()
             if (!includeParts && meta.parts[sessionID] === undefined) {
               setMeta("parts", sessionID, false)
             }
@@ -312,30 +377,28 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           hydrateMessages(sessionID)
 
           const hasMessages = current.message[sessionID] !== undefined
-          let partsReady = meta.parts[sessionID] === true
-          if (hasMessages && !partsReady) {
+          const partsReady = (() => {
+            const meta = getMeta()
+            const existing = meta.parts[sessionID] === true
+            if (!hasMessages || existing) return existing
             const messages = current.message[sessionID] ?? []
-            if (messages.length > 0) {
-              let ready = true
-              for (const message of messages) {
-                if (!current.part[message.id]) {
-                  ready = false
-                  continue
-                }
-                recordParts(setStore, sessionID, message.id)
-              }
-              if (ready) {
-                setMeta("parts", sessionID, true)
-                partsReady = true
-              }
-            }
-          }
+            if (messages.length === 0) return existing
+            const ready = messages.every((message) => {
+              const part = current.part[message.id]
+              if (!part) return false
+              recordParts(setStore, sessionID, message.id)
+              return true
+            })
+            if (!ready) return false
+            setMeta("parts", sessionID, true)
+            return true
+          })()
           if (hasSession && hasMessages && partsReady) return
 
-          const pending = inflight.get(sessionID)
+          const pending = inflight().get(sessionID)
           if (pending) return pending
 
-          const limit = meta.limit[sessionID] ?? initialHistoryLimit
+          const limit = getMeta().limit[sessionID] ?? initialHistoryLimit
 
           const sessionReq = hasSession
             ? Promise.resolve()
@@ -363,10 +426,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const promise = Promise.all([sessionReq, messagesReq])
             .then(() => {})
             .finally(() => {
-              inflight.delete(sessionID)
+              inflight().delete(sessionID)
             })
 
-          inflight.set(sessionID, promise)
+          inflight().set(sessionID, promise)
           return promise
         },
         async ensureParts(sessionID: string, messageID: string) {
@@ -376,7 +439,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             return
           }
           const key = `${sessionID}:${messageID}`
-          const pending = inflightParts.get(key)
+          const pending = inflightParts().get(key)
           if (pending) return pending
           const promise = retry(() =>
             sdk.client.session.message({
@@ -392,16 +455,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               mergeParts(setStore, sessionID, data.info.id, data.parts ?? [], { merge: true })
             })
             .finally(() => {
-              inflightParts.delete(key)
+              inflightParts().delete(key)
             })
-          inflightParts.set(key, promise)
+          inflightParts().set(key, promise)
           return promise
         },
         async prefetchReasoning(sessionID: string, messageID: string) {
           const existing = store().part[messageID]
           if (existing?.some((part) => part.type === "reasoning")) return
           const key = `${sessionID}:${messageID}`
-          const pending = inflightReasoning.get(key)
+          const pending = inflightReasoning().get(key)
           if (pending) return pending
           const promise = retry(() =>
             sdk.client.session.message({
@@ -417,15 +480,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               mergeParts(setStore, sessionID, data.info.id, data.parts ?? [], { merge: true })
             })
             .finally(() => {
-              inflightReasoning.delete(key)
+              inflightReasoning().delete(key)
             })
-          inflightReasoning.set(key, promise)
+          inflightReasoning().set(key, promise)
           return promise
         },
         async diff(sessionID: string) {
           if (store().session_diff[sessionID] !== undefined) return
 
-          const pending = inflightDiff.get(sessionID)
+          const pending = inflightDiff().get(sessionID)
           if (pending) return pending
 
           const promise = retry(() => sdk.client.session.diff({ sessionID }))
@@ -433,16 +496,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               setStore("session_diff", sessionID, reconcile(diff.data ?? [], { key: "file" }))
             })
             .finally(() => {
-              inflightDiff.delete(sessionID)
+              inflightDiff().delete(sessionID)
             })
 
-          inflightDiff.set(sessionID, promise)
+          inflightDiff().set(sessionID, promise)
           return promise
         },
         async todo(sessionID: string) {
           if (store().todo[sessionID] !== undefined) return
 
-          const pending = inflightTodo.get(sessionID)
+          const pending = inflightTodo().get(sessionID)
           if (pending) return pending
 
           const promise = retry(() => sdk.client.session.todo({ sessionID }))
@@ -450,23 +513,25 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               setStore("todo", sessionID, reconcile(todo.data ?? [], { key: "id" }))
             })
             .finally(() => {
-              inflightTodo.delete(sessionID)
+              inflightTodo().delete(sessionID)
             })
 
-          inflightTodo.set(sessionID, promise)
+          inflightTodo().set(sessionID, promise)
           return promise
         },
         history: {
           more(sessionID: string) {
             if (store().message[sessionID] === undefined) return false
+            const meta = getMeta()
             if (meta.limit[sessionID] === undefined) return false
             if (meta.complete[sessionID]) return false
             return true
           },
           loading(sessionID: string) {
-            return meta.loading[sessionID] ?? false
+            return getMeta().loading[sessionID] ?? false
           },
           async loadMore(sessionID: string, count = chunk) {
+            const meta = getMeta()
             if (meta.loading[sessionID]) return
             if (meta.complete[sessionID]) return
 

@@ -638,6 +638,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const part = props.part as TextPart
   const displayText = () => relativizeProjectPaths((part.text ?? "").trim(), data.directory)
   const throttledText = createThrottledValue(displayText)
+  const complete = createMemo(() => part.time?.end !== undefined || !part.time)
+  const text = createMemo(() => displayText())
   const [copied, setCopied] = createSignal(false)
 
   const handleCopy = async () => {
@@ -649,10 +651,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   }
 
   return (
-    <Show when={throttledText()}>
-      <div data-component="text-part">
+    <Show when={text()}>
+      <div data-component="text-part" data-streaming={complete() ? undefined : ""}>
         <div data-slot="text-part-body">
-          <Markdown text={throttledText()} cacheKey={part.id} />
+          <Show
+            when={complete()}
+            fallback={<div data-slot="text-part-stream" class="whitespace-pre-wrap">{text()}</div>}
+          >
+            <Markdown text={throttledText()} cacheKey={part.id} />
+          </Show>
           <div data-slot="text-part-copy-wrapper">
             <Tooltip
               value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}

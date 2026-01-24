@@ -9,7 +9,7 @@ import {
   type Accessor,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { SessionTurn } from "@opencode-ai/ui/session-turn"
+import { SessionTurn, buildSessionTurnIndex } from "@opencode-ai/ui/session-turn"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DateTime } from "luxon"
@@ -113,6 +113,12 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const renderedUserMessages = createMemo(() => sessionMessages.visibleUserMessages())
+  const sessionIndex = createMemo(() => {
+    const id = sessionId()
+    if (!id) return undefined
+    const messages = sync.data.message[id] ?? []
+    return buildSessionTurnIndex(messages)
+  })
   const assistant = createMemo(() => {
     const id = sessionId()
     if (!id) return false
@@ -389,6 +395,8 @@ export function SessionPane(props: SessionPaneProps) {
     const session = sessionId()
     if (!session) return
 
+    if (!isFocused()) return
+
     const visible = renderedUserMessages()
     if (visible.length === 0) return
 
@@ -591,6 +599,7 @@ export function SessionPane(props: SessionPaneProps) {
                         sessionID={sessionId()!}
                         messageID={message.id}
                         lastUserMessageID={sessionMessages.lastUserMessage()?.id}
+                        index={sessionIndex()}
                         stepsExpanded={store.stepsExpanded[message.id] ?? false}
                         todos={todos()}
                         todoCollapsed={todoCollapsed()}
@@ -747,6 +756,7 @@ export function SessionPane(props: SessionPaneProps) {
           sessionId={sessionId()}
           visibleUserMessages={sessionMessages.visibleUserMessages}
           lastUserMessage={sessionMessages.lastUserMessage}
+          index={sessionIndex()}
           todos={todos()}
           todoCollapsed={todoCollapsed()}
           onTodoToggle={() => setTodoCollapsed((c) => !c)}

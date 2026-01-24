@@ -133,6 +133,38 @@ function same<T>(a: readonly T[], b: readonly T[]) {
   return a.every((x, i) => x === b[i])
 }
 
+export type SessionTurnIndex = {
+  messageIndex: Record<string, number>
+  assistantByUser: Record<string, AssistantMessage[]>
+  lastUserMessageId?: string
+}
+
+export function buildSessionTurnIndex(messages: MessageType[]): SessionTurnIndex {
+  const messageIndex: Record<string, number> = {}
+  const assistantByUser: Record<string, AssistantMessage[]> = {}
+
+  messages.forEach((message, index) => {
+    if (!message?.id) return
+    messageIndex[message.id] = index
+    if (message.role !== "assistant") return
+    const parent = (message as AssistantMessage).parentID
+    if (!parent) return
+    const existing = assistantByUser[parent]
+    if (existing) {
+      existing.push(message as AssistantMessage)
+      return
+    }
+    assistantByUser[parent] = [message as AssistantMessage]
+  })
+
+  const lastUserMessageId = messages.reduce((acc, message) => {
+    if (message?.role === "user") return message.id
+    return acc
+  }, undefined as string | undefined)
+
+  return { messageIndex, assistantByUser, lastUserMessageId }
+}
+
 function StepsContainer(props: {
   toolParts: { part: ToolPart; message: AssistantMessage }[]
 
@@ -281,6 +313,8 @@ export function SessionTurn(
 
     lastUserMessageID?: string
 
+    index?: SessionTurnIndex
+
     stepsExpanded?: boolean
 
     hideTitle?: boolean
@@ -327,6 +361,15 @@ export function SessionTurn(
   const allMessages = createMemo(() => data.store.message[props.sessionID] ?? emptyMessages)
 
   const messageIndex = createMemo(() => {
+    const index = props.index?.messageIndex
+    if (index) {
+      const direct = index[props.messageID]
+      if (direct !== undefined) {
+        const msg = allMessages()[direct]
+        if (msg?.role === "user") return direct
+      }
+      return -1
+    }
     const messages = allMessages()
 
     const result = Binary.search(messages, props.messageID, (m) => m.id)
@@ -383,6 +426,10 @@ export function SessionTurn(
   const lastUserMessageID = createMemo(() => {
     if (props.lastUserMessageID) return props.lastUserMessageID
 
+    const indexed = props.index?.lastUserMessageId
+    if (indexed) return indexed
+    if (props.index) return undefined
+
     const messages = allMessages()
 
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -409,6 +456,9 @@ export function SessionTurn(
       const msg = message()
 
       if (!msg) return emptyAssistant
+
+      const indexed = props.index?.assistantByUser[msg.id]
+      if (props.index) return indexed ?? emptyAssistant
 
       const messages = allMessages()
 

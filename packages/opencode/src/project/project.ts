@@ -139,14 +139,25 @@ export namespace Project {
       }
     })
 
-    // Check if project exists
-    const existing = await Storage.read<Info>(["project", id]).catch(() => undefined)
+    // Check if project exists by git root commit ID
+    const existingByRootCommit = await Storage.read<Info>(["project", id]).catch(() => undefined)
+
+    // If an existing project has the same git root commit but a different worktree,
+    // this is an independent clone (not a git worktree). Create a unique project ID.
+    const isIndependentClone =
+      existingByRootCommit && normalizePathKey(worktree) !== normalizePathKey(existingByRootCommit.worktree)
+    const projectId = isIndependentClone ? `${id}-${Buffer.from(worktree).toString("base64url")}` : id
+
+    // For independent clones, check if this clone's project already exists
+    const existing = isIndependentClone
+      ? await Storage.read<Info>(["project", projectId]).catch(() => undefined)
+      : existingByRootCommit
 
     let result: Info
     if (!existing) {
       // New project - create it with this directory as the primary worktree
       result = {
-        id,
+        id: projectId,
         worktree,
         vcs: vcs as Info["vcs"],
         sandboxes: [],
@@ -159,15 +170,15 @@ export namespace Project {
       if (normalizePathKey(sandbox) !== normalizePathKey(worktree)) {
         result.sandboxes.push(sandbox)
       }
-      if (id !== "global") {
-        await migrateFromGlobal(id, worktree)
+      if (projectId !== "global") {
+        await migrateFromGlobal(projectId, worktree)
       }
       if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(result)
-      await Storage.write<Info>(["project", id], result)
+      await Storage.write<Info>(["project", projectId], result)
     } else {
       // Existing project - use atomic update to add this directory as a sandbox
       // Keep the original worktree, don't overwrite it
-      result = await Storage.update<Info>(["project", id], (draft) => {
+      result = await Storage.update<Info>(["project", projectId], (draft) => {
         // migrate old projects before sandboxes
         if (!draft.sandboxes) draft.sandboxes = []
 

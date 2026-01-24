@@ -272,6 +272,7 @@ function PaneProviders(props: { paneId: string; directory: string; children: any
   const multiPane = useMultiPane()
   const sync = useSync()
   const sdk = useSDK()
+  const isFocused = () => multiPane.focusedPaneId() === props.paneId
   const respondToPermission = (input: {
     sessionID: string
     permissionID: string
@@ -295,7 +296,10 @@ function PaneProviders(props: { paneId: string; directory: string; children: any
       onPlanModeRespond={respondToPlanMode}
       onNavigateToSession={navigateToSession}
       onSetAgent={(name) => setAgentFn?.(name)}
-      onReasoningPrefetch={(input) => sync.session.prefetchReasoning(input.sessionID, input.messageID)}
+      onReasoningPrefetch={(input) => {
+        if (!isFocused()) return
+        return sync.session.prefetchReasoning(input.sessionID, input.messageID)
+      }}
     >
       <LocalProvider>
         <AgentBridge setAgentRef={(fn) => (setAgentFn = fn)}>
