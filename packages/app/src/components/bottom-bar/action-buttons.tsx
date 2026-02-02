@@ -2,8 +2,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { SkillsPopover } from "./skills-popover"
-import { McpPopover } from "./mcp-popover"
-import { PluginsPopover } from "./plugins-popover"
 import { SettingsPopover } from "./settings-popover"
 
 export function ActionButtons() {
@@ -26,18 +24,6 @@ export function ActionButtons() {
           Skills
         </Button>
       </SkillsPopover>
-
-      <McpPopover>
-        <Button variant="ghost" size="small" icon="mcp" class="text-text-base">
-          MCP
-        </Button>
-      </McpPopover>
-
-      <PluginsPopover>
-        <Button variant="ghost" size="small" icon="code" class="text-text-base">
-          Plugins
-        </Button>
-      </PluginsPopover>
 
       <SettingsPopover>
         <Button variant="ghost" size="small" icon="settings-gear" class="text-text-base">

@@ -4,6 +4,7 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import "./skills-panel.css"
 
 function inferSource(location: string): string {
   const normalized = location.replace(/\\\\/g, "/")
@@ -84,8 +85,9 @@ export const SkillsPanel: Component = () => {
   })
 
   return (
-    <div class="flex flex-col gap-2">
+    <div class="skills-panel">
       <List
+        class="skills-list"
         search={{ placeholder: "Search skills", autofocus: false }}
         emptyMessage="No skills found"
         key={(x) => x?.name ?? ""}

@@ -53,7 +53,7 @@ function init() {
             }}
           >
             <Kobalte.Portal>
-              <Kobalte.Overlay data-component="dialog-overlay" />
+              <Kobalte.Overlay data-component="dialog-overlay" onPointerDown={close} />
               {element()}
             </Kobalte.Portal>
           </Kobalte>

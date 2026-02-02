@@ -97,13 +97,9 @@ export const McpSettingsPanel: Component = () => {
   }
 
   return (
-    <div class="flex flex-col gap-2">
-      <div class="flex justify-end px-2.5 pb-2">
-        <Button size="small" icon="plus" onClick={() => showEdit()}>
-          Add
-        </Button>
-      </div>
+    <div class="flex flex-col gap-2 h-full min-h-0">
       <List
+        class="flex-1 min-h-0"
         search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.mcp.empty")}
         key={(x) => x?.name ?? ""}
@@ -142,6 +138,11 @@ export const McpSettingsPanel: Component = () => {
           )
         }}
       </List>
+      <div class="flex justify-end px-2.5 pt-2">
+        <Button size="small" icon="plus" onClick={() => showEdit()}>
+          Add
+        </Button>
+      </div>
     </div>
   )
 }

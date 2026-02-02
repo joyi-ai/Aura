@@ -749,8 +749,15 @@ export namespace CodexProcessor {
       const abortHandler = () => {
         const turnId = ctx.turnID
         if (turnId) {
-          void CodexAppServer.turnInterrupt({ threadId: ctx.threadID, turnId })
+          void CodexAppServer.turnInterrupt({ threadId: ctx.threadID, turnId }).catch(() => {})
         }
+        // If turnInterrupt doesn't produce a turn/completed within 3s, force resolve
+        setTimeout(() => {
+          if (!ctx.turnStatus) {
+            ctx.turnStatus = "interrupted"
+            done.resolve()
+          }
+        }, 3000)
       }
       abortSubscription.handler = abortHandler
       input.abort.addEventListener("abort", abortHandler, { once: true })
@@ -767,6 +774,10 @@ export namespace CodexProcessor {
       }
 
       await ensureAccount(input)
+      if (input.abort.aborted) {
+        ctx.turnStatus = "interrupted"
+        return { finish: "interrupted", cost: 0, tokens: result.tokens }
+      }
       const textInput = { type: "text", text: input.prompt }
       const imageInputs = (input.images ?? [])
         .filter((image) => image.length > 0)
