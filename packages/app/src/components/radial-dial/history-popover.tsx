@@ -177,7 +177,7 @@ export function HistoryPopover(props: HistoryPopoverProps) {
   return (
     <div
       ref={contentRef}
-      class="fixed z-50 w-72 max-h-96 overflow-y-auto no-scrollbar rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95"
+      class="fixed z-50 w-72 max-h-96 overflow-y-auto no-scrollbar rounded-md border border-border-base/50 bg-surface-raised-stronger-non-alpha shadow-md p-2 animate-in fade-in-0 zoom-in-95"
       style={{
         right: `calc(100vw - ${props.x}px + 8px)`,
         top: `${props.y - 100}px`,

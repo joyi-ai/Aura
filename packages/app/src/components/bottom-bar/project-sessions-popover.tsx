@@ -450,7 +450,7 @@ export function ProjectSessionsPopover(props: Props) {
         {props.children}
       </Kobalte.Trigger>
       <Kobalte.Portal>
-        <Kobalte.Content ref={contentRef} class="z-50 w-80 rounded-lg border border-border-base bg-background-base shadow-lg p-3 animate-in fade-in-0 zoom-in-95">
+        <Kobalte.Content ref={contentRef} data-component="popover-content" class="!w-80 !max-w-none p-3 animate-in fade-in-0 zoom-in-95">
           {/* Tabs with actions */}
           <div class="flex items-center gap-1 pb-2 mb-2 border-b border-border-weak-base">
             <div class="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1">

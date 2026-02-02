@@ -1,5 +1,5 @@
 import { type ParentProps, createMemo, Match, onMount, Show, Switch } from "solid-js"
-import { Popover as Kobalte } from "@kobalte/core/popover"
+import { Popover } from "@opencode-ai/ui/popover"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -41,7 +41,7 @@ function VoiceSettingsContent() {
   }
 
   return (
-    <div class="w-80 max-h-80 overflow-y-auto flex flex-col gap-4">
+    <div class="w-80 max-h-80 overflow-y-auto flex flex-col gap-4 p-px -m-px">
       {/* Model Status */}
       <Switch>
         <Match when={voice.state.modelStatus() === "not-downloaded"}>
@@ -145,22 +145,8 @@ function VoiceSettingsContent() {
 
 export function SettingsPopover(props: ParentProps) {
   return (
-    <Kobalte gutter={8} placement="top-end" modal={false}>
-      <Kobalte.Trigger as="div" class="cursor-pointer">
-        {props.children}
-      </Kobalte.Trigger>
-      <Kobalte.Portal>
-        <Kobalte.Content class="z-50 rounded-lg border border-border-base bg-background-base shadow-lg p-3 animate-in fade-in-0 zoom-in-95">
-          <div class="flex items-center justify-between pb-2 border-b border-border-weak-base mb-2">
-            <div class="flex items-center gap-2">
-              <Icon name="settings-gear" size="small" class="text-icon-base" />
-              <span class="text-13-medium text-text-strong">Settings</span>
-            </div>
-            <Kobalte.CloseButton as={IconButton} icon="close" variant="ghost" />
-          </div>
-          <VoiceSettingsContent />
-        </Kobalte.Content>
-      </Kobalte.Portal>
-    </Kobalte>
+    <Popover gutter={8} placement="top-end" modal={false} trigger={props.children} title="Settings">
+      <VoiceSettingsContent />
+    </Popover>
   )
 }

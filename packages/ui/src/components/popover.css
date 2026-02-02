@@ -5,7 +5,7 @@
 [data-component="popover-content"] {
   z-index: 50;
   min-width: 200px;
-  max-width: 320px;
+  max-width: 360px;
   border-radius: var(--radius-md);
   background-color: var(--surface-raised-stronger-non-alpha);
 

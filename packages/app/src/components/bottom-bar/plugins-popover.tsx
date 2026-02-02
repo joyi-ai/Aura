@@ -1,7 +1,5 @@
 import { type ParentProps, Show, createMemo, createSignal } from "solid-js"
-import { Popover as Kobalte } from "@kobalte/core/popover"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Popover } from "@opencode-ai/ui/popover"
 import { SDKProvider } from "@/context/sdk"
 import { SyncProvider } from "@/context/sync"
 import { useMultiPane } from "@/context/multi-pane"
@@ -12,7 +10,7 @@ function PluginsContent() {
   const [activeTab, setActiveTab] = createSignal<"claude" | "opencode">("claude")
 
   return (
-    <div class="w-80 max-h-80 overflow-y-auto flex flex-col gap-3">
+    <div class="w-80 max-h-80 overflow-y-auto flex flex-col gap-3 p-px -m-px">
       <div class="flex gap-1 p-0.5 rounded-md bg-surface-raised-base">
         <button
           type="button"
@@ -49,23 +47,9 @@ function PluginsContent() {
 
 function PluginsPopoverInner(props: ParentProps) {
   return (
-    <Kobalte gutter={8} placement="top-end" modal={false}>
-      <Kobalte.Trigger as="div" class="cursor-pointer">
-        {props.children}
-      </Kobalte.Trigger>
-      <Kobalte.Portal>
-        <Kobalte.Content class="z-50 rounded-lg border border-border-base bg-background-base shadow-lg p-3 animate-in fade-in-0 zoom-in-95">
-          <div class="flex items-center justify-between pb-2 border-b border-border-weak-base mb-2">
-            <div class="flex items-center gap-2">
-              <Icon name="code" size="small" class="text-icon-base" />
-              <span class="text-13-medium text-text-strong">Plugins</span>
-            </div>
-            <Kobalte.CloseButton as={IconButton} icon="close" variant="ghost" />
-          </div>
-          <PluginsContent />
-        </Kobalte.Content>
-      </Kobalte.Portal>
-    </Kobalte>
+    <Popover gutter={8} placement="top-end" modal={false} trigger={props.children} title="Plugins">
+      <PluginsContent />
+    </Popover>
   )
 }
 
