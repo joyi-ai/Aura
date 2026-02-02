@@ -400,16 +400,14 @@ export function SessionPane(props: SessionPaneProps) {
     const visible = renderedUserMessages()
     if (visible.length === 0) return
 
-    const visibleIds = new Set(visible.map((m) => m.id))
-    const messages = sync.data.message[session] ?? []
-    for (const msg of messages) {
-      if (msg.role === "user" && visibleIds.has(msg.id)) {
-        void sync.session.ensureParts(session, msg.id)
-        continue
-      }
+    const index = sessionIndex()
+    if (!index) return
 
-      if ("parentID" in msg && visibleIds.has(msg.parentID)) {
-        void sync.session.ensureParts(session, msg.id)
+    for (const msg of visible) {
+      void sync.session.ensureParts(session, msg.id)
+      const assistants = index.assistantByUser[msg.id] ?? []
+      for (const assistant of assistants) {
+        void sync.session.ensureParts(session, assistant.id)
       }
     }
   })

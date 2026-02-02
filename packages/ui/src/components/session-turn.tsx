@@ -355,6 +355,8 @@ export function SessionTurn(
   const emptyPermissions: PermissionRequest[] = []
 
   const emptyPermissionParts: { part: ToolPart; message: AssistantMessage }[] = []
+  const emptyTools: { part: ToolPart; message: AssistantMessage }[] = []
+  const emptyAgents: { id: string; name: string; status: string; done: boolean }[] = []
 
   const idle = { type: "idle" as const }
 
@@ -555,6 +557,8 @@ export function SessionTurn(
   })
 
   const taskToolParts = createMemo(() => {
+    if (!isLastUserMessage()) return emptyTools
+
     const result: { part: ToolPart; message: AssistantMessage }[] = []
 
     for (const item of allToolParts()) {
@@ -569,6 +573,8 @@ export function SessionTurn(
   })
 
   const stepsToolParts = createMemo(() => {
+    if (!isLastUserMessage()) return emptyTools
+
     const result: { part: ToolPart; message: AssistantMessage }[] = []
     const skip = new Set(["askuserquestion", "exitplanmode", "task", "question"])
     const seen = new Set<string>()
@@ -615,6 +621,8 @@ export function SessionTurn(
   })
 
   const taskAgents = createMemo(() => {
+    if (!isLastUserMessage()) return emptyAgents
+
     const result: { id: string; name: string; status: string; done: boolean }[] = []
 
     const normalizeDetail = (value: string | undefined) => {
@@ -1199,6 +1207,9 @@ export function SessionTurn(
   )
 
   createEffect(() => {
+    setStore("duration", duration())
+    if (!working()) return
+
     const timer = setInterval(() => {
       setStore("duration", duration())
     }, 1000)
