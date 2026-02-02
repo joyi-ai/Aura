@@ -6,8 +6,6 @@ import { $ } from "bun"
 import { Storage } from "../storage/storage"
 import { Log } from "../util/log"
 import { Flag } from "@/flag/flag"
-import { Session } from "../session"
-import { work } from "../util/queue"
 import { fn } from "@opencode-ai/util/fn"
 import { BusEvent } from "@/bus/bus-event"
 import { iife } from "@/util/iife"
@@ -132,9 +130,9 @@ export namespace Project {
       }
 
       return {
-        id: "global",
-        worktree: "/",
-        sandbox: "/",
+        id: Buffer.from(directory).toString("base64url"),
+        worktree: directory,
+        sandbox: directory,
         vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
       }
     })
@@ -169,9 +167,6 @@ export namespace Project {
       // Add sandbox if different from worktree (using normalized comparison)
       if (normalizePathKey(sandbox) !== normalizePathKey(worktree)) {
         result.sandboxes.push(sandbox)
-      }
-      if (projectId !== "global") {
-        await migrateFromGlobal(projectId, worktree)
       }
       if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(result)
       await Storage.write<Info>(["project", projectId], result)
@@ -241,29 +236,6 @@ export namespace Project {
     return
   }
 
-  async function migrateFromGlobal(newProjectID: string, worktree: string) {
-    const globalProject = await Storage.read<Info>(["project", "global"]).catch(() => undefined)
-    if (!globalProject) return
-
-    const globalSessions = await Storage.list(["session", "global"]).catch(() => [])
-    if (globalSessions.length === 0) return
-
-    log.info("migrating sessions from global", { newProjectID, worktree, count: globalSessions.length })
-
-    await work(10, globalSessions, async (key) => {
-      const sessionID = key[key.length - 1]
-      const session = await Storage.read<Session.Info>(key).catch(() => undefined)
-      if (!session) return
-      if (session.directory && session.directory !== worktree) return
-
-      session.projectID = newProjectID
-      log.info("migrating session", { sessionID, from: "global", to: newProjectID })
-      await Storage.write(["session", newProjectID, sessionID], session)
-      await Storage.remove(key)
-    }).catch((error) => {
-      log.error("failed to migrate sessions from global to project", { error, projectId: newProjectID })
-    })
-  }
 
   export async function setInitialized(projectID: string) {
     await Storage.update<Info>(["project", projectID], (draft) => {
