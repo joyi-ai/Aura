@@ -172,6 +172,10 @@ export namespace ClaudeAgentProcessor {
     planFilePath?: string
     /** Streaming text parts by content block index (for real-time token streaming) */
     streamingParts: Map<number, { partId: string; text: string; type: "text" | "reasoning" }>
+    /** Whether streaming events were received for the current message */
+    hadStreaming?: boolean
+    /** Whether streaming was ever active during this query (for result dedup) */
+    hadAnyStreaming?: boolean
   }
 
   /**
@@ -408,19 +412,17 @@ export namespace ClaudeAgentProcessor {
 
       case "assistant":
         // Process assistant message content blocks.
-        // Text/thinking may arrive here as fallback if streaming is unavailable,
-        // or via stream_event for real-time token streaming.
+        // Text/thinking are only processed here as a fallback when streaming was
+        // unavailable. When streaming was active, these were already captured via
+        // stream_event and processing them again would create duplicate parts
+        // (streamingParts is cleared on message_stop before this handler runs).
         if (!msg.message?.content) break
         for (const block of msg.message.content) {
           // Skip non-object blocks
           if (typeof block !== "object" || block === null) continue
           if ("text" in block && block.text) {
-            // Text block - fallback for when streaming is unavailable
-            // Check if we already have this content from streaming
-            const existingStreamedText = Array.from(ctx.streamingParts.values()).find(
-              (p) => p.type === "text" && p.text === block.text,
-            )
-            if (!existingStreamedText) {
+            // Text block - only process if streaming was not active
+            if (!ctx.hadStreaming) {
               const textPart: MessageV2.TextPart = {
                 id: Identifier.ascending("part"),
                 sessionID: ctx.sessionID,
@@ -432,11 +434,8 @@ export namespace ClaudeAgentProcessor {
               await Session.updatePart(textPart)
             }
           } else if ("thinking" in block && block.thinking) {
-            // Reasoning/thinking block - fallback for when streaming is unavailable
-            const existingStreamedReasoning = Array.from(ctx.streamingParts.values()).find(
-              (p) => p.type === "reasoning" && p.text === block.thinking,
-            )
-            if (!existingStreamedReasoning) {
+            // Reasoning/thinking block - only process if streaming was not active
+            if (!ctx.hadStreaming) {
               const reasoningPart: MessageV2.ReasoningPart = {
                 id: Identifier.ascending("part"),
                 sessionID: ctx.sessionID,
@@ -491,6 +490,7 @@ export namespace ClaudeAgentProcessor {
             }
           }
         }
+        ctx.hadStreaming = false
         break
 
       case "user": {
@@ -593,24 +593,18 @@ export namespace ClaudeAgentProcessor {
         })
 
         // For slash commands and other direct results, the output is in msg.result
-        // Only process if there's result text and we haven't already displayed it via streaming
+        // Only process if there's result text and streaming didn't already capture it
         const resultMsg = msg as { result?: string; subtype: string }
-        if (resultMsg.result && resultMsg.result.trim()) {
-          // Check if we already have this content from streaming
-          const existingStreamedText = Array.from(ctx.streamingParts.values()).find(
-            (p) => p.type === "text" && p.text === resultMsg.result,
-          )
-          if (!existingStreamedText) {
-            const textPart: MessageV2.TextPart = {
-              id: Identifier.ascending("part"),
-              sessionID: ctx.sessionID,
-              messageID: ctx.messageID,
-              type: "text",
-              text: resultMsg.result,
-              time: { start: Date.now() },
-            }
-            await Session.updatePart(textPart)
+        if (resultMsg.result && resultMsg.result.trim() && !ctx.hadAnyStreaming) {
+          const textPart: MessageV2.TextPart = {
+            id: Identifier.ascending("part"),
+            sessionID: ctx.sessionID,
+            messageID: ctx.messageID,
+            type: "text",
+            text: resultMsg.result,
+            time: { start: Date.now() },
           }
+          await Session.updatePart(textPart)
         }
         break
       }
@@ -627,6 +621,8 @@ export namespace ClaudeAgentProcessor {
           const block = event.content_block
 
           if (block.type === "text") {
+            ctx.hadStreaming = true
+            ctx.hadAnyStreaming = true
             const partId = Identifier.ascending("part")
             ctx.streamingParts.set(index, { partId, text: "", type: "text" })
             // Create initial empty text part
@@ -640,6 +636,8 @@ export namespace ClaudeAgentProcessor {
             }
             await Session.updatePart(textPart)
           } else if (block.type === "thinking") {
+            ctx.hadStreaming = true
+            ctx.hadAnyStreaming = true
             const partId = Identifier.ascending("part")
             ctx.streamingParts.set(index, { partId, text: "", type: "reasoning" })
             // Create initial empty reasoning part
