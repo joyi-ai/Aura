@@ -41,27 +41,29 @@ function ProjectAvatar(props: {
   )
 }
 
+function ProjectItem(props: { project: LocalProject }) {
+  return (
+    <ProjectSessionsPopover project={props.project}>
+      <button
+        type="button"
+        class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover transition-colors cursor-pointer"
+      >
+        <ProjectAvatar project={props.project} notify />
+        <span class="text-13-medium text-text-base whitespace-nowrap max-w-24 truncate">
+          {props.project.name || getFilename(props.project.worktree)}
+        </span>
+      </button>
+    </ProjectSessionsPopover>
+  )
+}
+
 export function ProjectsList() {
   const layout = useLayout()
   const projects = createMemo(() => layout.projects.list())
 
   return (
-    <div class="flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
-      <For each={projects()}>
-        {(project) => (
-          <ProjectSessionsPopover project={project}>
-            <button
-              type="button"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover transition-colors cursor-pointer"
-            >
-              <ProjectAvatar project={project} notify />
-              <span class="text-13-medium text-text-base whitespace-nowrap max-w-24 truncate">
-                {project.name || getFilename(project.worktree)}
-              </span>
-            </button>
-          </ProjectSessionsPopover>
-        )}
-      </For>
+    <div class="flex flex-wrap-reverse items-end content-end gap-1">
+      <For each={projects()}>{(project) => <ProjectItem project={project} />}</For>
     </div>
   )
 }
