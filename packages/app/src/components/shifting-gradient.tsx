@@ -379,7 +379,9 @@ export function ShiftingGradient(props: { class?: string }) {
               background:
                 `radial-gradient(circle at center, ` +
                 `rgba(${item().color.r}, ${item().color.g}, ${item().color.b}, ${item().alpha}) 0%, ` +
+                `rgba(${item().color.r}, ${item().color.g}, ${item().color.b}, ${item().alpha * 0.95}) 12%, ` +
                 `rgba(${item().color.r}, ${item().color.g}, ${item().color.b}, ${Math.max(0, item().alpha - 0.18)}) 26%, ` +
+                `rgba(${item().color.r}, ${item().color.g}, ${item().color.b}, ${Math.max(0, item().alpha - 0.35)}) 45%, ` +
                 `transparent 72%)`,
             }}
           />

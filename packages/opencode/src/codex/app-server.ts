@@ -186,6 +186,7 @@ export namespace CodexAppServer {
       process.platform === "win32"
         ? [
             path.join(home, ".local", "bin", "codex.exe"),
+            path.join(home, ".bun", "bin", "codex.exe"),
             path.join(home, "AppData", "Roaming", "npm", "codex.cmd"),
             path.join(home, "AppData", "Roaming", "npm", "codex.exe"),
             path.join(home, "AppData", "Roaming", "npm", "codex"),
@@ -214,7 +215,7 @@ export namespace CodexAppServer {
             "/usr/local/n/versions/node/*/bin/codex",
           ]
 
-    const picked = await pickExecutable([...binCandidates, ...vendorCandidates, ...paths])
+    const picked = await pickExecutable([...paths, ...binCandidates, ...vendorCandidates])
     if (picked) {
       log.info("found codex executable", { path: picked })
       return picked

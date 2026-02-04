@@ -2115,7 +2115,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       setStore("imageAttachments", [])
       setStore("mode", "normal")
       if (props.onSubmitted) props.onSubmitted()
-      scrollBehavior().triggerSnapToNewMessage()
 
       const currentModel = local.model.current()
       const currentAgent = local.agent.current()
@@ -2134,6 +2133,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const baseClaudeCodeFlow = inClaudeCodeMode ? true : undefined
 
       if (isShellMode) {
+        scrollBehavior().triggerSnapToNewMessage()
         sdk.client.session
           .shell({
             sessionID: existing.id,
@@ -2185,6 +2185,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         if (allowCustom) {
           const customCommand = sync.data.command.find((c) => c.name === commandName)
           if (customCommand) {
+            scrollBehavior().triggerSnapToNewMessage()
             sdk.client.session
               .command({
                 sessionID: existing.id,
@@ -2239,6 +2240,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
 
       const messageID = Identifier.ascending("message")
+      scrollBehavior().triggerSnapToMessageId(messageID)
+
       const textPart = {
         id: Identifier.ascending("part"),
         type: "text" as const,

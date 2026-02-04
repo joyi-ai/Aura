@@ -2,6 +2,7 @@ import { Show, createMemo, onMount, createEffect, on, createSignal, batch, type 
 import { useSearchParams } from "@solidjs/router"
 import { useMultiPane, type PaneConfig } from "@/context/multi-pane"
 import { PaneGrid } from "@/components/pane-grid"
+import { SingleViewPane } from "@/components/single-view-pane"
 import { SessionPane } from "@/components/session-pane"
 import { useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
@@ -731,10 +732,82 @@ function MultiPaneContent(props: MultiPanePageProps) {
                 collisionDetector={closestCenter}
               >
                 <DragDropSensors />
-                <PaneGrid
-                  panes={visiblePanes()}
+                <Show
+                  when={multiPane.viewMode() === "single"}
+                  fallback={
+                    <>
+                      <PaneGrid
+                        panes={visiblePanes()}
+                        renderPane={(pane) => {
+                          const isFocused = createMemo(() => multiPane.focusedPaneId() === pane.id)
+                          const state = createMemo(() => getPaneState(pane))
+                          const activeDirectory = createMemo(() => pane.worktree ?? pane.directory)
+                          return (
+                            <Show
+                              when={state() === "session"}
+                              fallback={
+                                <PaneHome
+                                  paneId={pane.id}
+                                  isFocused={isFocused}
+                                  selectedProject={pane.directory}
+                                  currentWorktree={pane.worktree}
+                                />
+                              }
+                            >
+                              {(_) => (
+                                <SDKProvider directory={activeDirectory()!}>
+                                  <SyncProvider>
+                                    <PaneSyncedProviders paneId={pane.id} directory={activeDirectory()!}>
+                                      <SessionPane
+                                        paneId={pane.id}
+                                        directory={activeDirectory()!}
+                                        projectDirectory={pane.directory}
+                                        sessionId={pane.sessionId!}
+                                        isFocused={isFocused}
+                                        worktree={pane.worktree}
+                                        onSessionChange={(sessionId: string | undefined) =>
+                                          multiPane.updatePane(pane.id, { sessionId })
+                                        }
+                                        onDirectoryChange={(dir: string) =>
+                                          multiPane.updatePane(pane.id, {
+                                            directory: dir,
+                                            sessionId: undefined,
+                                            worktree: undefined,
+                                          })
+                                        }
+                                        onWorktreeChange={(worktree) => multiPane.updatePane(pane.id, { worktree })}
+                                        onClose={() => closePaneWithWorktreeCheck(pane.id)}
+                                      />
+                                    </PaneSyncedProviders>
+                                  </SyncProvider>
+                                </SDKProvider>
+                              )}
+                            </Show>
+                          )
+                        }}
+                      />
+                      <DragOverlay>
+                        <Show when={activeTitle()}>
+                          {(title) => (
+                            <div
+                              class="pointer-events-none rounded-md border border-border-weak-base px-3 py-2 shadow-xs-border-base"
+                              style={{ "background-color": dragOverlayBackground }}
+                            >
+                              <div class="text-12-medium text-text-strong">{title()}</div>
+                              <Show when={activeProject()}>
+                                {(project) => <div class="text-11-regular text-text-weak">{project()}</div>}
+                              </Show>
+                            </div>
+                          )}
+                        </Show>
+                      </DragOverlay>
+                    </>
+                  }
+                >
+                  <SingleViewPane
+                  pane={multiPane.focusedPane()}
                   renderPane={(pane) => {
-                    const isFocused = createMemo(() => multiPane.focusedPaneId() === pane.id)
+                    const isFocused = () => true
                     const state = createMemo(() => getPaneState(pane))
                     const activeDirectory = createMemo(() => pane.worktree ?? pane.directory)
                     return (
@@ -781,21 +854,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
                     )
                   }}
                 />
-                <DragOverlay>
-                  <Show when={activeTitle()}>
-                    {(title) => (
-                      <div
-                        class="pointer-events-none rounded-md border border-border-weak-base px-3 py-2 shadow-xs-border-base"
-                        style={{ "background-color": dragOverlayBackground }}
-                      >
-                        <div class="text-12-medium text-text-strong">{title()}</div>
-                        <Show when={activeProject()}>
-                          {(project) => <div class="text-11-regular text-text-weak">{project()}</div>}
-                        </Show>
-                      </div>
-                    )}
-                  </Show>
-                </DragOverlay>
+              </Show>
               </DragDropProvider>
             </div>
           </div>

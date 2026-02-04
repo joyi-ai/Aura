@@ -257,6 +257,7 @@ export function SessionPane(props: SessionPaneProps) {
     working,
     composerHeight: scrollBehavior.composerHeight,
     snapRequested: scrollBehavior.snapRequested,
+    snapTargetId: scrollBehavior.snapTargetId,
     clearSnapRequest: scrollBehavior.clearSnapRequest,
     onUserScrolledAway: scrollBehavior.setUserScrolledAway,
     onContentResize: () => setTick((value) => value + 1),

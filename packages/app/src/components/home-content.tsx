@@ -512,30 +512,31 @@ export function HomeContent(props: HomeContentProps) {
               <Switch>
                 <Match when={projects().length > 0}>
                   <div class="flex flex-col gap-3">
-                    <div class="flex items-center justify-between gap-3">
-                      <div class="flex items-center gap-2 min-w-0 flex-1">
-                        <IconButton
-                          icon="folder-add-left"
-                          variant="ghost"
-                          aria-label="Open project"
-                          onClick={chooseProject}
-                        />
-                        <div class="min-w-0 text-14-mono text-text-strong truncate flex-1">
-                          {selectedProject() ? selectedProject()!.replace(homedir(), "~") : "Select a project"}
-                        </div>
-                        <Show when={selectedProject() && worktreeOptions().length > 1}>
-                          <WorktreePopover size="normal" />
-                        </Show>
-                      </div>
-                      <Show when={otherProjects().length > 0}>
-                        <Button
-                          size="normal"
-                          variant="ghost"
-                          class="px-2 text-12-regular text-text-weak"
+                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                      <IconButton
+                        icon="folder-add-left"
+                        variant="ghost"
+                        aria-label="Open project"
+                        onClick={chooseProject}
+                      />
+                      <Show
+                        when={otherProjects().length > 0}
+                        fallback={
+                          <div class="min-w-0 text-14-mono text-text-strong truncate flex-1">
+                            {selectedProject() ? selectedProject()!.replace(homedir(), "~") : "Select a project"}
+                          </div>
+                        }
+                      >
+                        <button
+                          type="button"
+                          class="min-w-0 text-14-mono text-text-strong truncate flex-1 text-left cursor-pointer rounded-md px-2 py-1 -mx-2 -my-1 hover:bg-button-ghost-base-hover transition-colors"
                           onClick={() => setShowMore((value) => !value)}
                         >
-                          {showMore() ? "less" : "more"}
-                        </Button>
+                          {selectedProject() ? selectedProject()!.replace(homedir(), "~") : "Select a project"}
+                        </button>
+                      </Show>
+                      <Show when={selectedProject() && worktreeOptions().length > 1}>
+                        <WorktreePopover size="normal" />
                       </Show>
                     </div>
                     <Show when={showMore() && otherProjects().length > 0}>

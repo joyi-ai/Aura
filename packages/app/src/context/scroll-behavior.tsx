@@ -7,6 +7,10 @@ export interface ScrollBehaviorState {
   setComposerHeight: (height: number) => void
   /** Trigger a snap-to-top for the newest user message */
   triggerSnapToNewMessage: () => void
+  /** Trigger snap to a specific message by ID (more reliable) */
+  triggerSnapToMessageId: (messageId: string) => void
+  /** Target message ID for snap (if provided) */
+  snapTargetId: Accessor<string | undefined>
   /** Signal indicating a snap was requested (read this to track reactively) */
   snapRequested: Accessor<boolean>
   /** Clear the snap request after handling it */
@@ -24,21 +28,32 @@ const paneStates = new Map<string, ScrollBehaviorState>()
 function createScrollBehaviorState(): ScrollBehaviorState {
   const [composerHeight, setComposerHeight] = createSignal(0)
   const [snapRequested, setSnapRequested] = createSignal(false)
+  const [snapTargetId, setSnapTargetId] = createSignal<string | undefined>()
   const [userScrolledAway, setUserScrolledAway] = createSignal(false)
 
   function triggerSnapToNewMessage() {
+    setSnapTargetId(undefined)
+    setSnapRequested(true)
+    setUserScrolledAway(false)
+  }
+
+  function triggerSnapToMessageId(messageId: string) {
+    setSnapTargetId(messageId)
     setSnapRequested(true)
     setUserScrolledAway(false)
   }
 
   function clearSnapRequest() {
     setSnapRequested(false)
+    setSnapTargetId(undefined)
   }
 
   return {
     composerHeight,
     setComposerHeight,
     triggerSnapToNewMessage,
+    triggerSnapToMessageId,
+    snapTargetId,
     snapRequested,
     clearSnapRequest,
     userScrolledAway,

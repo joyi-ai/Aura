@@ -4,6 +4,10 @@ import { createEffect, createSignal, on, onCleanup, type Accessor } from "solid-
 const HEADER_BREATHING_ROOM = 48
 /** Distance from bottom to consider "near bottom" for auto-scroll re-engagement */
 const NEAR_BOTTOM_THRESHOLD = 50
+/** Maximum retry attempts for snap when waiting for target message */
+const MAX_SNAP_RETRIES = 10
+/** Debounce delay for container resize scroll restoration (ms) */
+const RESIZE_DEBOUNCE_MS = 100
 
 export interface UseSessionScrollOptions {
   /** Whether the session is currently streaming/working */
@@ -12,6 +16,8 @@ export interface UseSessionScrollOptions {
   composerHeight: Accessor<number>
   /** Signal indicating snap was requested */
   snapRequested: Accessor<boolean>
+  /** Target message ID for snap (if provided, snap to this specific message) */
+  snapTargetId: Accessor<string | undefined>
   /** Clear the snap request after handling */
   clearSnapRequest: () => void
   /** Callback when user scrolls away during streaming */
@@ -44,6 +50,12 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   let messageCount = 0
   let mutationFrame = 0
   let resizeFrame = 0
+  let retryCount = 0
+  let snapInProgress = false
+  let snapTargetIdValue: string | undefined
+  let resizeInProgress = false
+  let wasAtBottom = true // Track if user was at bottom (for resize restoration)
+  let resizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
   const lastMessageId = { value: "" }
   const lastMessageIdAtSnap = { value: "" }
   const [containerHeight, setContainerHeight] = createSignal(0)
@@ -81,6 +93,26 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     if (idChanged) lastMessageId.value = currentId
   }
 
+  function snapToElement(el: HTMLElement) {
+    if (!scrollEl) return
+    snapInProgress = true
+    // Wait for element layout to stabilize with double RAF
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!scrollEl) {
+          snapInProgress = false
+          return
+        }
+        const targetScroll = Math.max(0, el.offsetTop - HEADER_BREATHING_ROOM)
+        scrollEl.scrollTo({ top: targetScroll, behavior: "smooth" })
+        // Clear snapInProgress after animation completes (~300ms for smooth scroll)
+        setTimeout(() => {
+          snapInProgress = false
+        }, 350)
+      })
+    })
+  }
+
   function snapNewMessageToTop() {
     if (!scrollEl) return
     // Find the last message element
@@ -90,19 +122,43 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       scrollToBottom()
       return
     }
-    // Calculate position to place message near top with breathing room
-    const messageTop = lastMessage.offsetTop
-    const targetScroll = Math.max(0, messageTop - HEADER_BREATHING_ROOM)
-    scrollEl.scrollTo({
-      top: targetScroll,
-      behavior: "smooth"
-    })
+    snapToElement(lastMessage)
   }
 
   function checkForNewMessageAndSnap() {
     if (!pendingSnap) return
     if (!scrollEl) return
 
+    // If we have a target ID, look for that specific message
+    if (snapTargetIdValue) {
+      const targetEl = scrollEl.querySelector(`[data-message-id="${snapTargetIdValue}"]`) as HTMLElement | null
+      if (!targetEl) {
+        // Message not in DOM yet - schedule retry
+        retryCount++
+        if (retryCount < MAX_SNAP_RETRIES) {
+          requestAnimationFrame(() => checkForNewMessageAndSnap())
+          return
+        }
+        // Give up after max retries, fall back to last message
+        pendingSnap = false
+        retryCount = 0
+        snapTargetIdValue = undefined
+        userScrolled = false
+        options.onUserScrolledAway(false)
+        snapNewMessageToTop()
+        return
+      }
+      // Found target, snap to it
+      pendingSnap = false
+      retryCount = 0
+      snapTargetIdValue = undefined
+      userScrolled = false
+      options.onUserScrolledAway(false)
+      snapToElement(targetEl)
+      return
+    }
+
+    // Fallback to existing count/ID logic for backward compat
     const currentCount = messageCount
     const countAdvanced = currentCount > lastMessageCount
     const idChanged = lastMessageId.value !== lastMessageIdAtSnap.value
@@ -114,12 +170,7 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       pendingSnap = false
       userScrolled = false
       options.onUserScrolledAway(false)
-      // Use double RAF to ensure DOM is fully rendered
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          snapNewMessageToTop()
-        })
-      })
+      snapNewMessageToTop()
     }
   }
 
@@ -161,9 +212,15 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     const el = e.target as HTMLElement
     if (el !== scrollEl) return
 
+    // Ignore scroll events during snap animation or container resize
+    if (snapInProgress || resizeInProgress) return
+
+    // Track at-bottom state for resize restoration
+    wasAtBottom = isNearBottom()
+
     // Check if user scrolled away during streaming
     if (options.working()) {
-      if (!isNearBottom()) {
+      if (!wasAtBottom) {
         if (!userScrolled) {
           userScrolled = true
           options.onUserScrolledAway(true)
@@ -177,6 +234,8 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   }
 
   function handleWheel(e: WheelEvent) {
+    // Ignore wheel events during snap animation or container resize
+    if (snapInProgress || resizeInProgress) return
     // Detect intentional scroll up during streaming
     if (options.working() && e.deltaY < 0 && !userScrolled) {
       userScrolled = true
@@ -215,9 +274,21 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       setContainerHeight(el.clientHeight)
       containerResizeObserver = new ResizeObserver((entries) => {
         const entry = entries[0]
-        if (entry) {
-          setContainerHeight(entry.contentRect.height)
-        }
+        if (!entry) return
+
+        // Mark resize in progress to ignore scroll events
+        resizeInProgress = true
+        setContainerHeight(entry.contentRect.height)
+
+        // Debounce scroll restoration to let spacer/layout settle
+        clearTimeout(resizeDebounceTimer)
+        resizeDebounceTimer = setTimeout(() => {
+          resizeInProgress = false
+          // Restore to bottom if user was at bottom before resize started
+          if (wasAtBottom && scrollEl) {
+            scrollEl.scrollTop = scrollEl.scrollHeight
+          }
+        }, RESIZE_DEBOUNCE_MS)
       })
       containerResizeObserver.observe(el)
     }
@@ -241,8 +312,12 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   createEffect(() => {
     const requested = options.snapRequested()
     if (requested) {
+      // Capture target ID before clearing (must read while signal is set)
+      snapTargetIdValue = options.snapTargetId()
       // Clear the request immediately so we don't process it again
       options.clearSnapRequest()
+      // Reset retry counter
+      retryCount = 0
       // Snapshot current message state so we only snap on the next new message
       updateMessageState()
       lastMessageCount = messageCount
@@ -286,6 +361,9 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     }
     if (resizeFrame) {
       cancelAnimationFrame(resizeFrame)
+    }
+    if (resizeDebounceTimer) {
+      clearTimeout(resizeDebounceTimer)
     }
   })
 

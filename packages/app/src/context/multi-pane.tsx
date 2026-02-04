@@ -18,6 +18,8 @@ export type PaneLayout = {
   rows: number
 }
 
+export type ViewMode = "single" | "multi"
+
 type PaneGridState = {
   columns: number
   rows: number
@@ -31,10 +33,20 @@ type MultiPaneState = {
   focusedPaneId?: string
   maximizedPaneId?: string
   grid: Record<number, PaneGridState | undefined>
+  viewMode: ViewMode
 }
 
 const MAX_PANES_PER_PAGE = 12
 const MAX_TOTAL_PANES = 48 // 4 pages worth
+const VIEW_MODE_STORAGE_KEY = "opencode:view-mode"
+
+function getInitialViewMode(): ViewMode {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    if (stored === "single" || stored === "multi") return stored
+  } catch {}
+  return "multi"
+}
 
 function generatePaneId() {
   return Math.random().toString(36).slice(2, 10)
@@ -60,6 +72,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       focusedPaneId: undefined,
       maximizedPaneId: undefined,
       grid: {},
+      viewMode: getInitialViewMode(),
     })
 
     const totalPages = createMemo(() => Math.max(1, Math.ceil(store.panes.length / MAX_PANES_PER_PAGE)))
@@ -145,6 +158,32 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       focusedPaneId: createMemo(() => store.focusedPaneId),
       focusedPane,
       maximizedPaneId: createMemo(() => store.maximizedPaneId),
+      viewMode: createMemo(() => store.viewMode),
+
+      setViewMode(mode: ViewMode) {
+        try {
+          localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+        } catch {}
+        batch(() => {
+          setStore("viewMode", mode)
+          if (mode === "single") {
+            setStore("maximizedPaneId", undefined)
+          }
+        })
+      },
+
+      toggleViewMode() {
+        const next = store.viewMode === "single" ? "multi" : "single"
+        try {
+          localStorage.setItem(VIEW_MODE_STORAGE_KEY, next)
+        } catch {}
+        batch(() => {
+          setStore("viewMode", next)
+          if (next === "single") {
+            setStore("maximizedPaneId", undefined)
+          }
+        })
+      },
       grid: {
         get(page: number, nextLayout: PaneLayout) {
           const entry = store.grid[page]

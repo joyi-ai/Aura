@@ -580,11 +580,15 @@ export default function Layout(props: ParentProps) {
   const backdropStyle = () => ({
     "background-color": "hsl(from var(--background-base) h s l / 0.25)",
   })
-  const grainStyle = () => ({
-    "background-image": `url("${GRAIN_DATA_URI}")`,
-    "background-repeat": "repeat",
-    "background-size": "120px 120px",
-  })
+  const grainStyle = () => {
+    const isSoft = theme.activeGradientMode() === "soft"
+    return {
+      "background-image": `url("${GRAIN_DATA_URI}")`,
+      "background-repeat": "repeat",
+      "background-size": "120px 120px",
+      opacity: isSoft ? 0.4 : 1,
+    }
+  }
 
   return (
     <div
