@@ -1,4 +1,4 @@
-import { batch, createMemo, createRoot } from "solid-js"
+import { batch, createMemo, createRoot, untrack } from "solid-js"
 import { createStore, produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import { Binary } from "@opencode-ai/util/binary"
 import { retry } from "@opencode-ai/util/retry"
@@ -433,7 +433,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return promise
         },
         async ensureParts(sessionID: string, messageID: string) {
-          const existing = store().part[messageID]
+          const existing = untrack(() => store().part[messageID])
           if (existing) {
             recordParts(setStore, sessionID, messageID)
             return
@@ -461,7 +461,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return promise
         },
         async prefetchReasoning(sessionID: string, messageID: string) {
-          const existing = store().part[messageID]
+          const existing = untrack(() => store().part[messageID])
           if (existing?.some((part) => part.type === "reasoning")) return
           const key = `${sessionID}:${messageID}`
           const pending = inflightReasoning().get(key)

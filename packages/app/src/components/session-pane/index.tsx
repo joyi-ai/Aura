@@ -113,12 +113,49 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const renderedUserMessages = createMemo(() => sessionMessages.visibleUserMessages())
-  const sessionIndex = createMemo(() => {
-    const id = sessionId()
-    if (!id) return undefined
-    const messages = sync.data.message[id] ?? []
-    return buildSessionTurnIndex(messages)
+  const rawSessionIndex = createMemo(
+    () => {
+      const id = sessionId()
+      if (!id) return undefined
+      const messages = sync.data.message[id] ?? []
+      return buildSessionTurnIndex(messages)
+    },
+    undefined,
+    {
+      equals: (prev, next) => {
+        if (prev === next) return true
+        if (!prev || !next) return false
+        if (prev.lastUserMessageId !== next.lastUserMessageId) return false
+        if (prev.messages.length !== next.messages.length) return false
+        const prevAssistantKeys = Object.keys(prev.assistantByUser)
+        const nextAssistantKeys = Object.keys(next.assistantByUser)
+        if (prevAssistantKeys.length !== nextAssistantKeys.length) return false
+        return prevAssistantKeys.every(
+          (key) => prev.assistantByUser[key]?.length === next.assistantByUser[key]?.length,
+        )
+      },
+    },
+  )
+
+  // Throttle index updates for unfocused panes to reduce reactive cascades
+  const UNFOCUSED_THROTTLE_MS = 2000
+  const [deferredIndex, setDeferredIndex] = createSignal(rawSessionIndex())
+  let indexTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const index = rawSessionIndex()
+    if (isFocused()) {
+      if (indexTimer) { clearTimeout(indexTimer); indexTimer = undefined }
+      setDeferredIndex(() => index)
+      return
+    }
+    if (indexTimer) clearTimeout(indexTimer)
+    indexTimer = setTimeout(() => {
+      setDeferredIndex(() => index)
+      indexTimer = undefined
+    }, UNFOCUSED_THROTTLE_MS)
   })
+  onCleanup(() => { if (indexTimer) clearTimeout(indexTimer) })
+  const sessionIndex = createMemo(() => isFocused() ? rawSessionIndex() : deferredIndex())
   const assistant = createMemo(() => {
     const id = sessionId()
     if (!id) return false

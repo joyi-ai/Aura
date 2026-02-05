@@ -10,7 +10,7 @@ type Entry = {
   html: string
 }
 
-const max = 200
+const max = 1000
 const cache = new Map<string, Entry>()
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
@@ -194,12 +194,15 @@ export function Markdown(
     { initialValue: "" },
   )
 
+  let prevCopyHtml = ""
   createEffect(() => {
     const container = root()
     const content = html()
     if (!container) return
     if (!content) return
     if (isServer) return
+    if (content === prevCopyHtml) return
+    prevCopyHtml = content
     const cleanup = setupCodeCopy(container, {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),

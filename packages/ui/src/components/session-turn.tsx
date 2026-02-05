@@ -15,8 +15,6 @@ import { useDiffComponent } from "../context/diff"
 
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 
-import { Binary } from "@opencode-ai/util/binary"
-
 import {
   createEffect,
   createMemo,
@@ -137,6 +135,7 @@ export type SessionTurnIndex = {
   messageIndex: Record<string, number>
   assistantByUser: Record<string, AssistantMessage[]>
   lastUserMessageId?: string
+  messages: MessageType[]
 }
 
 export function buildSessionTurnIndex(messages: MessageType[]): SessionTurnIndex {
@@ -162,7 +161,7 @@ export function buildSessionTurnIndex(messages: MessageType[]): SessionTurnIndex
     return acc
   }, undefined as string | undefined)
 
-  return { messageIndex, assistantByUser, lastUserMessageId }
+  return { messageIndex, assistantByUser, lastUserMessageId, messages }
 }
 
 function StepsContainer(props: {
@@ -257,54 +256,6 @@ type SessionMessageActions = {
   onDelete?: (message: MessageType) => void
 }
 
-function AssistantMessageItem(props: {
-  message: AssistantMessage
-
-  responsePartId: string | undefined
-
-  hideResponsePart: boolean
-
-  hideReasoning: boolean
-}) {
-  const data = useData()
-
-  const emptyParts: PartType[] = []
-
-  const msgParts = createMemo(() => data.store.part[props.message.id] ?? emptyParts)
-
-  const lastTextPart = createMemo(() => {
-    const parts = msgParts()
-
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const part = parts[i]
-
-      if (part?.type === "text") return part as TextPart
-    }
-
-    return undefined
-  })
-
-  const filteredParts = createMemo(() => {
-    let parts = msgParts()
-
-    if (props.hideReasoning) {
-      parts = parts.filter((part) => part?.type !== "reasoning")
-    }
-
-    if (!props.hideResponsePart) return parts
-
-    const responsePartId = props.responsePartId
-
-    if (!responsePartId) return parts
-
-    if (responsePartId !== lastTextPart()?.id) return parts
-
-    return parts.filter((part) => part?.id !== responsePartId)
-  })
-
-  return <Message message={props.message} parts={filteredParts()} />
-}
-
 export function SessionTurn(
   props: ParentProps<{
     sessionID: string
@@ -360,29 +311,19 @@ export function SessionTurn(
 
   const idle = { type: "idle" as const }
 
-  const allMessages = createMemo(() => data.store.message[props.sessionID] ?? emptyMessages)
+  const indexMessages = () => props.index?.messages ?? emptyMessages
 
   const messageIndex = createMemo(() => {
     const index = props.index?.messageIndex
     if (index) {
       const direct = index[props.messageID]
       if (direct !== undefined) {
-        const msg = allMessages()[direct]
+        const msg = indexMessages()[direct]
         if (msg?.role === "user") return direct
       }
       return -1
     }
-    const messages = allMessages()
-
-    const result = Binary.search(messages, props.messageID, (m) => m.id)
-
-    if (!result.found) return -1
-
-    const msg = messages[result.index]
-
-    if (msg.role !== "user") return -1
-
-    return result.index
+    return -1
   })
 
   const message = createMemo(() => {
@@ -390,7 +331,7 @@ export function SessionTurn(
 
     if (index < 0) return undefined
 
-    const msg = allMessages()[index]
+    const msg = indexMessages()[index]
 
     if (!msg || msg.role !== "user") return undefined
 
@@ -427,20 +368,7 @@ export function SessionTurn(
 
   const lastUserMessageID = createMemo(() => {
     if (props.lastUserMessageID) return props.lastUserMessageID
-
-    const indexed = props.index?.lastUserMessageId
-    if (indexed) return indexed
-    if (props.index) return undefined
-
-    const messages = allMessages()
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-
-      if (msg?.role === "user") return msg.id
-    }
-
-    return undefined
+    return props.index?.lastUserMessageId
   })
 
   const isLastUserMessage = createMemo(() => props.messageID === lastUserMessageID())
@@ -459,28 +387,7 @@ export function SessionTurn(
 
       if (!msg) return emptyAssistant
 
-      const indexed = props.index?.assistantByUser[msg.id]
-      if (props.index) return indexed ?? emptyAssistant
-
-      const messages = allMessages()
-
-      const index = messageIndex()
-
-      if (index < 0) return emptyAssistant
-
-      const result: AssistantMessage[] = []
-
-      for (let i = index + 1; i < messages.length; i++) {
-        const item = messages[i]
-
-        if (!item) continue
-
-        if (item.role === "user") break
-
-        if (item.role === "assistant" && item.parentID === msg.id) result.push(item as AssistantMessage)
-      }
-
-      return result
+      return props.index?.assistantByUser[msg.id] ?? emptyAssistant
     },
 
     emptyAssistant,
@@ -492,55 +399,49 @@ export function SessionTurn(
 
   const error = createMemo(() => assistantMessages().find((m) => m.error)?.error)
 
-  const lastTextPart = createMemo(() => {
+  // Single-pass consolidated memo over all assistant message parts.
+  // Replaces separate lastTextPart, hasSteps, allToolParts, reasoningTargets,
+  // and latestReasoningPart memos to reduce reactive store subscriptions.
+  const assistantPartsData = createMemo(() => {
     const msgs = assistantMessages()
+    const toolParts: { part: ToolPart; message: AssistantMessage }[] = []
+    let hasSteps = false
+    let lastTextPart: TextPart | undefined
+    const reasoningTargets: string[] = []
+    let latestReasoningPart: ReasoningPart | undefined
 
-    for (let mi = msgs.length - 1; mi >= 0; mi--) {
-      const msgParts = data.store.part[msgs[mi].id] ?? emptyParts
-
-      for (let pi = msgParts.length - 1; pi >= 0; pi--) {
-        const part = msgParts[pi]
-
-        if (part?.type === "text") return part as TextPart
-      }
-    }
-
-    return undefined
-  })
-
-  const hasSteps = createMemo(() => {
-    for (const m of assistantMessages()) {
-      const msgParts = data.store.part[m.id]
-
-      if (!msgParts) continue
+    for (const m of msgs) {
+      const msgParts = data.store.part[m.id] ?? emptyParts
+      const hasReasoningFlag = (m as AssistantMessage & { hasReasoning?: boolean }).hasReasoning
+      let foundReasoning = false
 
       for (const p of msgParts) {
-        if (p?.type === "tool") return true
-      }
-    }
-
-    return false
-  })
-
-  // Collect all tool parts for the carousel
-
-  const allToolParts = createMemo(() => {
-    const result: { part: ToolPart; message: AssistantMessage }[] = []
-
-    for (const m of assistantMessages()) {
-      const msgParts = data.store.part[m.id]
-
-      if (!msgParts) continue
-
-      for (const p of msgParts) {
-        if (p?.type === "tool") {
-          result.push({ part: p as ToolPart, message: m })
+        if (!p) continue
+        if (p.type === "tool") {
+          toolParts.push({ part: p as ToolPart, message: m })
+          hasSteps = true
+        }
+        if (p.type === "text") {
+          lastTextPart = p as TextPart
+        }
+        if (p.type === "reasoning") {
+          foundReasoning = true
+          const rp = p as ReasoningPart
+          if (rp.text?.trim()) latestReasoningPart = rp
         }
       }
+
+      if (foundReasoning || hasReasoningFlag) {
+        reasoningTargets.push(m.id)
+      }
     }
 
-    return result
+    return { toolParts, hasSteps, lastTextPart, reasoningTargets, latestReasoningPart }
   })
+
+  const lastTextPart = createMemo(() => assistantPartsData().lastTextPart)
+  const hasSteps = createMemo(() => assistantPartsData().hasSteps)
+  const allToolParts = createMemo(() => assistantPartsData().toolParts)
 
   const inlineToolParts = createMemo(() => {
     const result: { part: ToolPart; message: AssistantMessage }[] = []
@@ -749,9 +650,8 @@ export function SessionTurn(
     const findCommandLabel = (parent: string | undefined) => {
       if (!parent) return
 
-      const messages = allMessages()
-
-      const user = messages.find((msg) => msg.id === parent)
+      const idx = props.index?.messageIndex[parent]
+      const user = idx !== undefined ? indexMessages()[idx] : undefined
       if (!user || user.role !== "user") return
 
       const msgParts = data.store.part[user.id] ?? emptyParts
@@ -807,35 +707,11 @@ export function SessionTurn(
 
   const responsePartId = createMemo(() => lastTextPart()?.id)
 
-  const reasoningTargets = createMemo(() => {
-    const result: string[] = []
-    for (const msg of assistantMessages()) {
-      const parts = data.store.part[msg.id] ?? emptyParts
-      const hasPart = parts.some((part) => part?.type === "reasoning")
-      const hasFlag = (msg as AssistantMessage & { hasReasoning?: boolean }).hasReasoning
-      if (hasPart || hasFlag) {
-        result.push(msg.id)
-      }
-    }
-    return result
-  })
+  const reasoningTargets = createMemo(() => assistantPartsData().reasoningTargets)
 
   const hasReasoning = createMemo(() => reasoningTargets().length > 0)
 
-  const latestReasoningPart = createMemo(() => {
-    let latest: ReasoningPart | undefined
-    for (const msg of assistantMessages()) {
-      const msgParts = data.store.part[msg.id] ?? emptyParts
-      for (const part of msgParts) {
-        if (!part) continue
-        if (part.type !== "reasoning") continue
-        const rp = part as ReasoningPart
-        if (!rp.text?.trim()) continue
-        latest = rp
-      }
-    }
-    return latest
-  })
+  const latestReasoningPart = createMemo(() => assistantPartsData().latestReasoningPart)
 
   const reasoning = createMemo(() => {
     const part = latestReasoningPart()
@@ -896,6 +772,7 @@ export function SessionTurn(
 
 
   const commentary = createMemo(() => {
+    if (!isLastUserMessage()) return
     if (stepsToolParts().length === 0) return
 
     const responseId = responsePartId()
@@ -978,6 +855,8 @@ export function SessionTurn(
   const isShellMode = createMemo(() => !!shellModePart())
 
   const rawStatus = createMemo(() => {
+    if (!isLastUserMessage()) return undefined
+
     const msgs = assistantMessages()
 
     let last: PartType | undefined
@@ -1207,6 +1086,7 @@ export function SessionTurn(
   )
 
   createEffect(() => {
+    if (!isLastUserMessage()) return
     setStore("duration", duration())
     if (!working()) return
 
