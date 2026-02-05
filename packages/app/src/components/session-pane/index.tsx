@@ -137,6 +137,9 @@ export function SessionPane(props: SessionPaneProps) {
     },
   )
 
+  // Focus state
+  const isFocused = createMemo(() => props.isFocused?.() ?? true)
+
   // Throttle index updates for unfocused panes to reduce reactive cascades
   const UNFOCUSED_THROTTLE_MS = 2000
   const [deferredIndex, setDeferredIndex] = createSignal(rawSessionIndex())
@@ -164,9 +167,6 @@ export function SessionPane(props: SessionPaneProps) {
     const messages = sync.data.message[id] ?? []
     return messages.some((message) => message.role === "assistant" && message.parentID === last.id)
   })
-
-  // Focus state
-  const isFocused = createMemo(() => props.isFocused?.() ?? true)
 
   // Header overlay hook
   const headerOverlay = useHeaderOverlay({

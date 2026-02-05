@@ -8,6 +8,7 @@ import { splitWhen } from "remeda"
 import { Bus } from "../bus"
 import { SessionPrompt } from "./prompt"
 import { Instance } from "../project/instance"
+import { Storage } from "../storage/storage"
 
 export namespace SessionRevert {
   const log = Log.create({ service: "session.revert" })
@@ -61,6 +62,8 @@ export namespace SessionRevert {
           revert.snapshot = session.revert?.snapshot ?? (await Snapshot.track())
           await Snapshot.revert(patches)
           if (revert.snapshot) revert.diff = await Snapshot.diff(revert.snapshot)
+          // Clear Claude agent session so next message starts fresh (not resume into stale history)
+          await Storage.remove(["claude-agent-session", input.sessionID]).catch(() => {})
           return Session.update(input.sessionID, (draft) => {
             draft.revert = revert
           })
@@ -144,6 +147,9 @@ export namespace SessionRevert {
         for (const msg of remove) {
           await Session.removeMessage({ sessionID: input.sessionID, messageID: msg.info.id })
         }
+
+        // Clear Claude agent session so next message starts fresh (not resume into stale history)
+        await Storage.remove(["claude-agent-session", input.sessionID]).catch(() => {})
 
         return Session.get(input.sessionID)
       },

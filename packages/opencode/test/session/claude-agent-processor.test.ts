@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ClaudeAgentProcessor } from "../../src/session/claude-agent-processor"
+import { ClaudeAgentProcessor } from "../../src/session/claude-agent"
 import { Agent } from "../../src/agent/agent"
 
 describe("ClaudeAgentProcessor.mapPermissionMode", () => {
