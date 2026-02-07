@@ -335,7 +335,7 @@ export namespace ProviderTransform {
         if (id === "gpt-5-pro") return {}
         const openaiEfforts = iife(() => {
           if (id.includes("codex")) {
-            if (id.includes("5.2")) return [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
+            if (id.includes("5.2") || id.includes("5.3")) return [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
             return WIDELY_SUPPORTED_EFFORTS
           }
           const arr = [...WIDELY_SUPPORTED_EFFORTS]
@@ -363,6 +363,13 @@ export namespace ProviderTransform {
 
       case "@ai-sdk/anthropic":
         // https://v5.ai-sdk.dev/providers/ai-sdk-providers/anthropic
+        // Opus 4.6+: use effort parameter (adaptive thinking is the default)
+        if (id.includes("opus-4-6") || id.includes("opus-4.6") || id.includes("opus-46")) {
+          return Object.fromEntries(
+            WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { effort }]),
+          )
+        }
+        // Older models: budgetTokens-based thinking
         return {
           high: {
             thinking: {
@@ -382,6 +389,15 @@ export namespace ProviderTransform {
         // https://v5.ai-sdk.dev/providers/ai-sdk-providers/amazon-bedrock
         // For Anthropic models on Bedrock, use reasoningConfig with budgetTokens
         if (model.api.id.includes("anthropic")) {
+          // Opus 4.6+: effort-based reasoning
+          if (id.includes("opus-4-6") || id.includes("opus-4.6") || id.includes("opus-46")) {
+            return Object.fromEntries(
+              WIDELY_SUPPORTED_EFFORTS.map((effort) => [
+                effort,
+                { reasoningConfig: { type: "enabled", maxReasoningEffort: effort } },
+              ]),
+            )
+          }
           return {
             high: {
               reasoningConfig: {

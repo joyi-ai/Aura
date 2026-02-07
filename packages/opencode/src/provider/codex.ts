@@ -5,7 +5,8 @@ import { Log } from "../util/log"
 export namespace CodexProvider {
   const log = Log.create({ service: "codex-provider" })
   export const PROVIDER_ID = "codex"
-  const RELEASE_DATE = "2025-01-01"
+  const RELEASE_DATE_52 = "2025-01-01"
+  const RELEASE_DATE_53 = "2026-02-05"
 
   const BASE_CAPABILITIES: Provider.Model["capabilities"] = {
     temperature: false,
@@ -27,6 +28,15 @@ export namespace CodexProvider {
       pdf: false,
     },
     interleaved: true,
+  }
+
+  const CAPABILITIES_53: Provider.Model["capabilities"] = {
+    ...BASE_CAPABILITIES,
+    input: {
+      ...BASE_CAPABILITIES.input,
+      pdf: false,
+    },
+    interleaved: false,
   }
 
   function readString(input: unknown): string | undefined {
@@ -76,6 +86,10 @@ export namespace CodexProvider {
     return result
   }
 
+  function toVariants(input: string[]) {
+    return Object.fromEntries(input.map((effort) => [effort, { reasoningEffort: effort }]))
+  }
+
   function resolveModelID(input: Record<string, unknown>): string | undefined {
     const model = readString(input.model)
     if (model) return model
@@ -88,6 +102,65 @@ export namespace CodexProvider {
     const display = readString(input.displayName) ?? readString(input.display_name) ?? readString(input.displayname)
     if (display) return display
     return fallback
+  }
+
+  function createModel(input: {
+    id: string
+    name: string
+    efforts: string[]
+    releaseDate: string
+    limit: { context: number; output: number }
+    capabilities?: Provider.Model["capabilities"]
+  }): Provider.Model {
+    return {
+      id: input.id,
+      providerID: PROVIDER_ID,
+      name: input.name,
+      family: "codex",
+      api: { id: input.id, url: "", npm: "@ai-sdk/openai-compatible" },
+      capabilities: input.capabilities ?? BASE_CAPABILITIES,
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: input.limit,
+      status: "active",
+      options: {},
+      headers: {},
+      release_date: input.releaseDate,
+      variants: toVariants(input.efforts),
+    }
+  }
+
+  function fallbackModel(id: string): Provider.Model | undefined {
+    if (id === "gpt-5.3-codex") {
+      return createModel({
+        id,
+        name: "GPT-5.3 Codex",
+        efforts: ["low", "medium", "high", "xhigh"],
+        releaseDate: RELEASE_DATE_53,
+        limit: { context: 400000, output: 128000 },
+        capabilities: CAPABILITIES_53,
+      })
+    }
+    if (id === "gpt-5.2-codex") {
+      return createModel({
+        id,
+        name: "GPT-5.2 Codex",
+        efforts: ["low", "medium", "high"],
+        releaseDate: RELEASE_DATE_52,
+        limit: { context: 200000, output: 16000 },
+      })
+    }
+    return undefined
+  }
+
+  function ensureModel(input: Record<string, Provider.Model>, id: string) {
+    if (input[id]) return input
+    const model = fallbackModel(id)
+    if (!model) return input
+    log.info("injecting fallback codex model", { id })
+    return {
+      ...input,
+      [id]: model,
+    }
   }
 
   export async function account() {
@@ -112,28 +185,20 @@ export namespace CodexProvider {
       const efforts = readEfforts(record.supportedReasoningEfforts ?? record.supported_reasoning_efforts)
       const supported =
         efforts.length > 0 ? sortEfforts(Array.from(new Set(efforts))) : sortEfforts(["low", "medium", "high"])
-      const variants = Object.fromEntries(supported.map((effort) => [effort, { reasoningEffort: effort }]))
-      models[id] = {
+      models[id] = createModel({
         id,
-        providerID: PROVIDER_ID,
         name,
-        family: "codex",
-        api: { id, url: "", npm: "@ai-sdk/openai-compatible" },
-        capabilities: BASE_CAPABILITIES,
-        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+        efforts: supported,
+        releaseDate: RELEASE_DATE_52,
         limit: { context: 200000, output: 16000 },
-        status: "active",
-        options: {},
-        headers: {},
-        release_date: RELEASE_DATE,
-        variants,
-      }
+      })
     }
 
     if (Object.keys(models).length === 0) {
       log.warn("no codex models found")
     }
 
-    return models
+    const with53 = ensureModel(models, "gpt-5.3-codex")
+    return ensureModel(with53, "gpt-5.2-codex")
   }
 }

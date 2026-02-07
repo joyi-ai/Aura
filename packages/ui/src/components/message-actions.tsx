@@ -3,6 +3,7 @@ import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 
 export type MessageActionHandlers = {
+  onCopy?: () => void
   onEdit?: () => void
   onRestore?: () => void
   onRetry?: () => void
@@ -10,12 +11,14 @@ export type MessageActionHandlers = {
 }
 
 export function MessageActions(props: ComponentProps<"div"> & MessageActionHandlers) {
-  const [local, others] = splitProps(props, ["onEdit", "onRestore", "onRetry", "onDelete", "class", "classList"])
+  const [local, others] = splitProps(props, ["onCopy", "onEdit", "onRestore", "onRetry", "onDelete", "class", "classList"])
+  const hasCopy = () => !!local.onCopy
   const hasEdit = () => !!local.onEdit
   const hasRestore = () => !!local.onRestore
   const hasRetry = () => !!local.onRetry
   const hasDelete = () => !!local.onDelete
-  const hasActions = () => hasEdit() || hasRestore() || hasRetry() || hasDelete()
+  const hasActions = () => hasCopy() || hasEdit() || hasRestore() || hasRetry() || hasDelete()
+  const [copied, setCopied] = createSignal(false)
   const [confirmAction, setConfirmAction] = createSignal<"delete" | "restore" | undefined>()
   const confirmTimeout = {
     current: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -77,6 +80,20 @@ export function MessageActions(props: ComponentProps<"div"> & MessageActionHandl
           [local.class ?? ""]: !!local.class,
         }}
       >
+        <Show when={hasCopy()}>
+          <Tooltip value={copied() ? "Copied!" : "Copy"} placement="top" gutter={8}>
+            <IconButton
+              variant="ghost"
+              icon={copied() ? "check" : "copy"}
+              aria-label="Copy message"
+              onClick={() => {
+                local.onCopy?.()
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              }}
+            />
+          </Tooltip>
+        </Show>
         <Show when={hasEdit()}>
           <Tooltip value="Edit" placement="top" gutter={8}>
             <IconButton

@@ -246,13 +246,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     {
       id: "model.thinking.toggle",
-      title: "Toggle thinking",
-      description: "Toggle extended thinking",
+      title: "Cycle thinking effort",
+      description: "Cycle through thinking effort levels",
       category: "Model",
       keybind: "mod+shift+e",
       onSelect: () => {
-        local.model.thinking.toggle()
-        notify(local.model.thinking.current() ? "Thinking On" : "Thinking Off")
+        local.model.variant.cycle()
+        notify(local.model.variant.current() ?? "Default")
       },
     },
   ])
@@ -343,13 +343,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const agent = local.agent.current()
     const model = local.model.current()
     const variant = local.model.variant.current()
-    const thinking = local.model.thinking.current()
     return {
       mode: modePayload(),
       agent: agent ? agent.name : undefined,
       model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
       variant: variant === undefined ? null : variant,
-      thinking,
     }
   })
   const isClaudeCodeMode = createMemo(() => local.mode.current()?.id === "claude-code")
@@ -468,8 +466,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         const agentChanged = prevPayload.agent !== payload.agent
         const modelChanged = !isSameModel(prevPayload.model, payload.model)
         const variantChanged = prevPayload.variant !== payload.variant
-        const thinkingChanged = prevPayload.thinking !== payload.thinking
-        if (!modeChanged && !agentChanged && !modelChanged && !variantChanged && !thinkingChanged) return
+        if (!modeChanged && !agentChanged && !modelChanged && !variantChanged) return
 
         // Compare against session's stored values to avoid unnecessary updates
         // This prevents updating when we're just restoring the session's own values (e.g., on navigation)
@@ -481,17 +478,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         const actualAgentChanged = payload.agent !== session.agent
         const actualModelChanged = !isSameModel(payload.model, session.model)
         const actualVariantChanged = (payload.variant ?? undefined) !== session.variant
-        const actualThinkingChanged = payload.thinking !== session.thinking
 
         // If nothing actually differs from what's stored, skip the update
-        if (
-          !actualModeChanged &&
-          !actualAgentChanged &&
-          !actualModelChanged &&
-          !actualVariantChanged &&
-          !actualThinkingChanged
-        )
-          return
+        if (!actualModeChanged && !actualAgentChanged && !actualModelChanged && !actualVariantChanged) return
 
         // Don't sync mode changes if session already has messages
         const sessionMessages = sync.data.message[sessionId]
@@ -505,7 +494,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             agent: actualAgentChanged ? payload.agent : undefined,
             model: actualModelChanged ? payload.model : undefined,
             variant: actualVariantChanged ? payload.variant : undefined,
-            thinking: actualThinkingChanged ? payload.thinking : undefined,
           })
           .catch(() => {})
       },
@@ -2004,7 +1992,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           agent: meta.agent,
           model: meta.model,
           variant: meta.variant,
-          thinking: meta.thinking,
         })
         existing = created.data ?? undefined
         if (existing) {
@@ -2129,7 +2116,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const baseAgent = currentAgent.name
       const baseVariant = local.model.variant.current()
       const inClaudeCodeMode = isClaudeCodeMode()
-      const baseThinking = inClaudeCodeMode ? local.model.thinking.current() : undefined
       const baseClaudeCodeFlow = inClaudeCodeMode ? true : undefined
 
       if (isShellMode) {
@@ -2218,7 +2204,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const model = activeAction?.model ?? baseModel
       const variant = activeAction?.variant ?? baseVariant
       const system = activeAction?.system
-      const thinking = activeAction?.thinking ?? baseThinking
       const claudeCodeFlow = activeAction?.claudeCodeFlow ?? baseClaudeCodeFlow
 
       const revertSuccess = activeAction
@@ -2268,36 +2253,62 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         model,
       })
 
-      sdk.client.session
-        .prompt({
-          sessionID: existing.id,
-          agent,
-          model,
-          messageID,
-          parts: requestParts,
-          variant,
-          system,
-          thinking,
-          claudeCodeFlow,
-          mode: modePayload(),
-        })
-        .then((response) => {
-          const data = response.data
-          if (!data) return
-          sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
-        })
-        .catch((e) => {
-          if (abortingRef) {
-            abortingRef = false
-            return
-          }
-          console.error("Failed to send prompt", e)
-          showToast({
-            variant: "error",
-            title: language.t("prompt.toast.promptSendFailed.title"),
-            description: language.t("common.requestFailed"),
+      if (claudeCodeFlow) {
+        sdk.client.session
+          .promptAsync({
+            sessionID: existing.id,
+            agent,
+            model,
+            messageID,
+            parts: requestParts,
+            variant,
+            system,
+            claudeCodeFlow,
+            mode: modePayload(),
           })
-        })
+          .catch((e) => {
+            if (abortingRef) {
+              abortingRef = false
+              return
+            }
+            console.error("Failed to send prompt", e)
+            showToast({
+              variant: "error",
+              title: language.t("prompt.toast.promptSendFailed.title"),
+              description: language.t("common.requestFailed"),
+            })
+          })
+      } else {
+        sdk.client.session
+          .prompt({
+            sessionID: existing.id,
+            agent,
+            model,
+            messageID,
+            parts: requestParts,
+            variant,
+            system,
+            claudeCodeFlow,
+            mode: modePayload(),
+          })
+          .then((response) => {
+            const data = response.data
+            if (!data) return
+            sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
+          })
+          .catch((e) => {
+            if (abortingRef) {
+              abortingRef = false
+              return
+            }
+            console.error("Failed to send prompt", e)
+            showToast({
+              variant: "error",
+              title: language.t("prompt.toast.promptSendFailed.title"),
+              description: language.t("common.requestFailed"),
+            })
+          })
+      }
     } finally {
       setSubmitting(false)
       abortingRef = false

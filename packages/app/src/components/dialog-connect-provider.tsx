@@ -708,9 +708,6 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                           <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.code.visit.link")}</Link>
                           {language.t("provider.connect.oauth.code.visit.suffix", { provider: provider().name })}
                         </div>
-                        <Show when={props.provider === "codex" && store.authorization?.url}>
-                          <TextField label="Login link" value={store.authorization!.url} readOnly copyable />
-                        </Show>
                         <form onSubmit={handleSubmit} class="flex flex-col items-start gap-4">
                           <TextField
                             autofocus
@@ -752,12 +749,8 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                       }
                       return instructions
                     })
-                    const showCode = createMemo(() => props.provider !== "codex" && !!code())
-                    const waitingLabel = createMemo(() =>
-                      props.provider === "codex"
-                        ? "Waiting for ChatGPT login..."
-                        : language.t("provider.connect.status.waiting"),
-                    )
+                    const showCode = createMemo(() => !!code())
+                    const waitingLabel = createMemo(() => language.t("provider.connect.status.waiting"))
 
                     onMount(async () => {
                       const result = await globalSDK.client.provider.oauth.callback({
@@ -775,23 +768,12 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                     return (
                       <div class="flex flex-col gap-6">
                         <div class="text-14-regular text-text-base">
-                          <Switch>
-                            <Match when={props.provider === "codex"}>
-                              Visit <Link href={store.authorization!.url}>this link</Link> to sign in with ChatGPT and
-                              return here to finish connecting.
-                            </Match>
-                            <Match when={true}>
-                              {language.t("provider.connect.oauth.auto.visit.prefix")}
-                              <Link href={store.authorization!.url}>
-                                {language.t("provider.connect.oauth.auto.visit.link")}
-                              </Link>
-                              {language.t("provider.connect.oauth.auto.visit.suffix", { provider: provider().name })}
-                            </Match>
-                          </Switch>
+                          {language.t("provider.connect.oauth.auto.visit.prefix")}
+                          <Link href={store.authorization!.url}>
+                            {language.t("provider.connect.oauth.auto.visit.link")}
+                          </Link>
+                          {language.t("provider.connect.oauth.auto.visit.suffix", { provider: provider().name })}
                         </div>
-                        <Show when={props.provider === "codex"}>
-                          <TextField label="Login link" value={store.authorization!.url} readOnly copyable />
-                        </Show>
                         <Show when={showCode()}>
                           <TextField
                             label={language.t("provider.connect.oauth.auto.confirmationCode")}

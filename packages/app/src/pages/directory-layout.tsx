@@ -225,7 +225,7 @@ export default function Layout(props: ParentProps) {
               const mode = sourceSession.mode ?? createdSession.mode
 
               sdk.client.session
-                .prompt({
+                .promptAsync({
                   sessionID: createdSession.id,
                   agent: "build",
                   model,
@@ -235,11 +235,6 @@ export default function Layout(props: ParentProps) {
                   thinking,
                   claudeCodeFlow: true,
                   mode,
-                })
-                .then((response) => {
-                  const data = response.data
-                  if (!data) return
-                  sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
                 })
                 .catch((error) => {
                   console.error("Failed to send plan prompt", error)

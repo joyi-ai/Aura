@@ -113,58 +113,87 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const renderedUserMessages = createMemo(() => sessionMessages.visibleUserMessages())
-  const rawSessionIndex = createMemo(
-    () => {
-      const id = sessionId()
-      if (!id) return undefined
-      const messages = sync.data.message[id] ?? []
-      return buildSessionTurnIndex(messages)
-    },
-    undefined,
-    {
-      equals: (prev, next) => {
-        if (prev === next) return true
-        if (!prev || !next) return false
-        if (prev.lastUserMessageId !== next.lastUserMessageId) return false
-        if (prev.messages.length !== next.messages.length) return false
-        const prevAssistantKeys = Object.keys(prev.assistantByUser)
-        const nextAssistantKeys = Object.keys(next.assistantByUser)
-        if (prevAssistantKeys.length !== nextAssistantKeys.length) return false
-        return prevAssistantKeys.every(
-          (key) => prev.assistantByUser[key]?.length === next.assistantByUser[key]?.length,
-        )
-      },
-    },
-  )
+  const sourceMessages = createMemo(() => {
+    const id = sessionId()
+    if (!id) return []
+    return sync.data.message[id] ?? []
+  })
+  const indexStamp = createMemo(() => {
+    const messages = sourceMessages()
+    const first = messages[0]?.id ?? ""
+    const last = messages[messages.length - 1]?.id ?? ""
+    return `${messages.length}:${first}:${last}`
+  })
 
   // Focus state
   const isFocused = createMemo(() => props.isFocused?.() ?? true)
 
   // Throttle index updates for unfocused panes to reduce reactive cascades
   const UNFOCUSED_THROTTLE_MS = 2000
-  const [deferredIndex, setDeferredIndex] = createSignal(rawSessionIndex())
+  const [sessionIndex, setSessionIndex] = createSignal<ReturnType<typeof buildSessionTurnIndex> | undefined>(undefined)
   let indexTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(() => {
-    const index = rawSessionIndex()
-    if (isFocused()) {
-      if (indexTimer) { clearTimeout(indexTimer); indexTimer = undefined }
-      setDeferredIndex(() => index)
+  let lastIndexSyncAt = 0
+
+  const syncSessionIndex = () => {
+    const id = sessionId()
+    if (!id) {
+      setSessionIndex(undefined)
       return
     }
-    if (indexTimer) clearTimeout(indexTimer)
-    indexTimer = setTimeout(() => {
-      setDeferredIndex(() => index)
-      indexTimer = undefined
-    }, UNFOCUSED_THROTTLE_MS)
-  })
-  onCleanup(() => { if (indexTimer) clearTimeout(indexTimer) })
-  const sessionIndex = createMemo(() => isFocused() ? rawSessionIndex() : deferredIndex())
-  const assistant = createMemo(() => {
+    const next = buildSessionTurnIndex(sourceMessages())
+    setSessionIndex(() => next)
+  }
+
+  createEffect(() => {
+    indexStamp()
     const id = sessionId()
-    if (!id) return false
+    const focused = isFocused()
+    if (!id) {
+      if (indexTimer) {
+        clearTimeout(indexTimer)
+        indexTimer = undefined
+      }
+      setSessionIndex(undefined)
+      return
+    }
+
+    if (focused) {
+      if (indexTimer) {
+        clearTimeout(indexTimer)
+        indexTimer = undefined
+      }
+      syncSessionIndex()
+      lastIndexSyncAt = performance.now()
+      return
+    }
+
+    const now = performance.now()
+    const elapsed = now - lastIndexSyncAt
+    if (elapsed >= UNFOCUSED_THROTTLE_MS) {
+      if (indexTimer) {
+        clearTimeout(indexTimer)
+        indexTimer = undefined
+      }
+      syncSessionIndex()
+      lastIndexSyncAt = now
+      return
+    }
+    if (indexTimer) return
+    indexTimer = setTimeout(() => {
+      syncSessionIndex()
+      lastIndexSyncAt = performance.now()
+      indexTimer = undefined
+    }, UNFOCUSED_THROTTLE_MS - elapsed)
+  })
+
+  onCleanup(() => {
+    if (indexTimer) clearTimeout(indexTimer)
+  })
+
+  const assistant = createMemo(() => {
     const last = sessionMessages.lastUserMessage()
     if (!last) return false
-    const messages = sync.data.message[id] ?? []
+    const messages = sourceMessages()
     return messages.some((message) => message.role === "assistant" && message.parentID === last.id)
   })
 
@@ -234,27 +263,15 @@ export function SessionPane(props: SessionPaneProps) {
         if (!id) return
         if (length === 0) return
         if (store.initialScrollDone) return
-        const fallback =
-          el ??
-          (document.querySelector('[data-scroll-container="session-pane"]') as HTMLElement | null) ??
-          (document.querySelector('[data-scroll-container="session-pane-mobile"]') as HTMLElement | null)
-        if (!fallback) {
-          setStore("initialScrollDone", true)
-          setStore("historyLoadArmed", false)
-          lastScrollTop.value = 0
-          return
-        }
+        if (!el) return
         requestAnimationFrame(() => {
-          const messages = fallback.querySelectorAll("[data-message-id]")
+          const active = scrollEl()
+          if (!active || active !== el) return
+          const messages = active.querySelectorAll("[data-message-id]")
           const last = messages[messages.length - 1] as HTMLElement | undefined
-          if (!last) {
-            setStore("initialScrollDone", true)
-            setStore("historyLoadArmed", false)
-            lastScrollTop.value = 0
-            return
-          }
-          const target = Math.max(0, last.offsetTop + last.offsetHeight - fallback.clientHeight)
-          fallback.scrollTop = target
+          if (!last) return
+          const target = Math.max(0, last.offsetTop + last.offsetHeight - active.clientHeight)
+          active.scrollTop = target
           setStore("initialScrollDone", true)
           setStore("historyLoadArmed", false)
           lastScrollTop.value = target
@@ -290,6 +307,26 @@ export function SessionPane(props: SessionPaneProps) {
   const scrollBehavior = useScrollBehavior(props.paneId, true)
 
   const [tick, setTick] = createSignal(0)
+  let lastTickTime = 0
+  let tickTimer: ReturnType<typeof setTimeout> | undefined
+  const TICK_THROTTLE_MS = 100
+  const throttledTick = () => {
+    const now = performance.now()
+    if (now - lastTickTime >= TICK_THROTTLE_MS) {
+      lastTickTime = now
+      setTick((value) => value + 1)
+      return
+    }
+    if (tickTimer) return
+    tickTimer = setTimeout(() => {
+      tickTimer = undefined
+      lastTickTime = performance.now()
+      setTick((value) => value + 1)
+    }, TICK_THROTTLE_MS - (now - lastTickTime))
+  }
+  onCleanup(() => {
+    if (tickTimer) clearTimeout(tickTimer)
+  })
   const sessionScroll = useSessionScroll({
     working,
     composerHeight: scrollBehavior.composerHeight,
@@ -297,7 +334,7 @@ export function SessionPane(props: SessionPaneProps) {
     snapTargetId: scrollBehavior.snapTargetId,
     clearSnapRequest: scrollBehavior.clearSnapRequest,
     onUserScrolledAway: scrollBehavior.setUserScrolledAway,
-    onContentResize: () => setTick((value) => value + 1),
+    onContentResize: throttledTick,
   })
   const mdQuery = window.matchMedia("(min-width: 768px)")
   const [isDesktop, setIsDesktop] = createSignal(mdQuery.matches)
@@ -314,6 +351,7 @@ export function SessionPane(props: SessionPaneProps) {
   const [spacer, setSpacer] = createSignal(0)
   const [jumpVisible, setJumpVisible] = createSignal(false)
   const [tail, setTail] = createSignal<HTMLElement | undefined>(undefined)
+  const prevSpacerInputs = { height: 0, tail: undefined as HTMLElement | undefined }
   const lastScrollTop = { value: 0 }
   const jump = { frame: 0, target: undefined as HTMLElement | undefined }
 
@@ -406,6 +444,11 @@ export function SessionPane(props: SessionPaneProps) {
       setSpacer(0)
       return
     }
+    // Skip expensive DOM reads when container height and tail haven't changed
+    // (e.g. horizontal-only resize fires tick but spacer result won't differ)
+    if (height === prevSpacerInputs.height && last === prevSpacerInputs.tail) return
+    prevSpacerInputs.height = height
+    prevSpacerInputs.tail = last
     const node = spacerEl()
     const space = node && el.contains(node) ? node.offsetHeight : 0
     const head = 48
@@ -703,7 +746,7 @@ export function SessionPane(props: SessionPaneProps) {
     </Show>
   )
 
-  const containerClass = "relative size-full flex flex-col overflow-hidden transition-all duration-150"
+  const containerClass = "relative size-full flex flex-col overflow-hidden transition-opacity duration-150"
   const containerStyle = () => (hasMultiplePanes() && !isFocused() ? { opacity: 0.5 } : undefined)
 
   const handleMultiPaneMouseDown = (event: MouseEvent) => {

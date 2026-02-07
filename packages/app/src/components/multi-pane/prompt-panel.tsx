@@ -63,7 +63,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
     model: { providerID: string; modelID: string } | undefined
     variant: string | null | undefined
     modeId: string | undefined
-    thinking: boolean | undefined
   }
 
   type SessionCacheStore = {
@@ -78,7 +77,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
     model: { providerID: string; modelID: string } | undefined
     variant: string | null | undefined
     modeId: string | undefined
-    thinking: boolean | undefined
   }
 
   const paneSnapshots = new Map<string, PaneSnapshot>()
@@ -127,8 +125,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
         const next = variant ?? undefined
         local.model.variant.set(next)
       }
-      const thinking = source?.thinking
-      if (thinking !== undefined) local.model.thinking.set(thinking)
       setRestoring(false)
     })
     if (useCache && cached?.prompt && !prompt.dirty()) prompt.set(cached.prompt)
@@ -141,13 +137,11 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       model: cached?.model,
       variant: cached?.variant,
       modeId: cached?.modeId,
-      thinking: cached?.thinking,
     }
     if (info.agent !== undefined) next.agent = info.agent
     if (info.model !== undefined) next.model = info.model
     if (info.variant !== undefined) next.variant = info.variant
     if (info.mode) next.modeId = info.mode.id
-    if (info.thinking !== undefined) next.thinking = info.thinking
     return next
   }
 
@@ -181,7 +175,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       model: currentModel ? { providerID: currentModel.provider.id, modelID: currentModel.id } : undefined,
       variant: local.model.variant.current(),
       modeId: local.mode.current()?.id,
-      thinking: local.model.thinking.current(),
     }
   }
 
@@ -195,7 +188,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       model: session.model,
       variant: session.variant,
       modeId: session.modeId,
-      thinking: session.thinking,
     }
   }
 
@@ -213,7 +205,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
     }
     cache.variant = state.variant
     cache.modeId = state.modeId
-    cache.thinking = state.thinking
     paneCache.set(paneId, cache)
   }
 

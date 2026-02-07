@@ -232,7 +232,7 @@ const createPlanModeResponder = (sync: SyncContext, sdk: ReturnType<typeof useSD
     const mode = sourceSession.mode ?? createdSession.mode
 
     sdk.client.session
-      .prompt({
+      .promptAsync({
         sessionID: createdSession.id,
         agent: "build",
         model,
@@ -242,11 +242,6 @@ const createPlanModeResponder = (sync: SyncContext, sdk: ReturnType<typeof useSD
         thinking,
         claudeCodeFlow: true,
         mode,
-      })
-      .then((response) => {
-        const data = response.data
-        if (!data) return
-        sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
       })
       .catch((error) => {
         console.error("Failed to send plan prompt", error)

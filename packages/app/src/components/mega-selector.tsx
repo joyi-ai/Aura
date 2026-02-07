@@ -5,7 +5,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import type { IconName } from "@opencode-ai/ui/icons/provider"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Switch } from "@opencode-ai/ui/switch"
 import { Tag } from "@opencode-ai/ui/tag"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLocal } from "@/context/local"
@@ -769,19 +768,8 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                   </div>
                 </Show>
 
-                {/* EXTENDED THINKING SECTION (Claude Code only) */}
-                <Show when={isClaudeCodeMode()}>
-                  <div class="flex items-center justify-between gap-2 px-1 py-1.5">
-                    <span class="text-12-regular text-text-base">Extended Thinking</span>
-                    <Switch
-                      checked={local.model.thinking.current()}
-                      onChange={(checked) => local.model.thinking.set(checked)}
-                    />
-                  </div>
-                </Show>
-
                 {/* Fallback when no options available */}
-                <Show when={!hasVariants() && !isClaudeCodeMode()}>
+                <Show when={!hasVariants()}>
                   <div class="px-2 py-3 text-12-regular text-text-weak text-center">No options available</div>
                 </Show>
               </div>

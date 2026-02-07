@@ -52,10 +52,18 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   const [currentIndex, setCurrentIndex] = createSignal(0)
   const isBusy = () => isSubmitting() || isRejecting()
 
-  // Don't render if already completed
-  if (props.status === "completed" && props.output) {
-    return null
-  }
+  const isCompleted = createMemo(() => props.status === "completed")
+
+  const completedAnswers = createMemo(() => {
+    if (!isCompleted()) return undefined
+    const out = props.output
+    if (!out) return undefined
+    try {
+      const parsed = JSON.parse(out)
+      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, string>
+    } catch {}
+    return { response: out } as Record<string, string>
+  })
 
   const toggleOption = (questionIndex: number, optionLabel: string, multiSelect: boolean) => {
     if (isBusy()) return
@@ -169,7 +177,9 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   }
 
   const hasSelections = () => {
-    return questions().some((_, i) => {
+    const qs = questions()
+    if (qs.length === 0) return false
+    return qs.every((_, i) => {
       const hasSelected = (selections()[i] ?? []).length > 0
       const hasOther = otherSelected()[i] && (customInputs()[i] ?? "").trim().length > 0
       return hasSelected || hasOther
@@ -199,141 +209,160 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   }
 
   return (
-    <div data-component="ask-user-question">
-      {/* Tabs navigation for multiple questions */}
-      <Show when={hasMultipleQuestions()}>
-        <div data-slot="ask-user-tabs">
+    <Show
+      when={!isCompleted()}
+      fallback={
+        <div data-component="ask-user-question" data-completed="true">
           <For each={questions()}>
-            {(question, index) => (
-              <button
-                type="button"
-                data-slot="ask-user-tab"
-                data-active={index() === currentIndex()}
-                data-has-selection={hasAnswer(index())}
-                onClick={() => setCurrentIndex(index())}
-              >
-                <span data-slot="ask-user-tab-label">{question.header}</span>
-              </button>
+            {(question) => (
+              <div data-slot="ask-user-completed-item">
+                <div data-slot="ask-user-question-text">{question.question}</div>
+                <div data-slot="ask-user-completed-answer">
+                  <Icon name="check" size="small" />
+                  <span>{completedAnswers()?.[question.question] ?? "—"}</span>
+                </div>
+              </div>
             )}
           </For>
         </div>
-      </Show>
-
-      {/* Current question */}
-      <Show when={currentQuestion()}>
-        <div data-slot="ask-user-question-item">
-          <Show when={!hasMultipleQuestions()}>
-            <div data-slot="ask-user-question-header">
-              <span data-slot="ask-user-question-label">{currentQuestion().header}</span>
-            </div>
-          </Show>
-          <div data-slot="ask-user-question-text">{currentQuestion().question}</div>
-          <div data-slot="ask-user-question-options">
-            <For each={currentQuestion().options}>
-              {(option) => (
+      }
+    >
+      <div data-component="ask-user-question">
+        {/* Tabs navigation for multiple questions */}
+        <Show when={hasMultipleQuestions()}>
+          <div data-slot="ask-user-tabs">
+            <For each={questions()}>
+              {(question, index) => (
                 <button
                   type="button"
-                  data-component="ask-user-chip"
-                  data-selected={isSelected(currentIndex(), option.label)}
-                  data-disabled={isBusy()}
-                  onClick={() => toggleOption(currentIndex(), option.label, currentQuestion().multiSelect)}
+                  data-slot="ask-user-tab"
+                  data-active={index() === currentIndex()}
+                  data-has-selection={hasAnswer(index())}
+                  onClick={() => setCurrentIndex(index())}
                 >
-                  <div data-slot="ask-user-chip-content">
-                    <span data-slot="ask-user-chip-label">{option.label}</span>
-                    <Show when={option.description}>
-                      <span data-slot="ask-user-chip-description">{option.description}</span>
-                    </Show>
-                  </div>
+                  <span data-slot="ask-user-tab-label">{question.header}</span>
                 </button>
               )}
             </For>
+          </div>
+        </Show>
 
-            {/* Other option with custom input */}
-            <Show when={currentQuestion().allowOther !== false}>
-              <div data-slot="ask-user-other-container">
-                <button
-                  type="button"
-                  data-component="ask-user-chip"
-                  data-selected={isOtherSelected(currentIndex())}
-                  data-disabled={isSubmitting()}
-                  onClick={() => toggleOther(currentIndex(), currentQuestion().multiSelect)}
-                >
-                  <div data-slot="ask-user-chip-content">
-                    <span data-slot="ask-user-chip-label">Other</span>
-                    <span data-slot="ask-user-chip-description">Provide custom response</span>
-                  </div>
-                </button>
-
-                <Show when={isOtherSelected(currentIndex())}>
-                  <input
-                    type="text"
-                    data-slot="ask-user-custom-input"
-                    placeholder="Enter your response..."
-                    value={getCustomInput(currentIndex())}
-                    onInput={(e) => updateCustomInput(currentIndex(), e.currentTarget.value)}
-                    disabled={isBusy()}
-                  />
-                </Show>
+        {/* Current question */}
+        <Show when={currentQuestion()}>
+          <div data-slot="ask-user-question-item">
+            <Show when={!hasMultipleQuestions()}>
+              <div data-slot="ask-user-question-header">
+                <span data-slot="ask-user-question-label">{currentQuestion().header}</span>
               </div>
             </Show>
-          </div>
-        </div>
-      </Show>
+            <div data-slot="ask-user-question-text">{currentQuestion().question}</div>
+            <div data-slot="ask-user-question-options">
+              <For each={currentQuestion().options}>
+                {(option) => (
+                  <button
+                    type="button"
+                    data-component="ask-user-chip"
+                    data-selected={isSelected(currentIndex(), option.label)}
+                    data-disabled={isBusy()}
+                    onClick={() => toggleOption(currentIndex(), option.label, currentQuestion().multiSelect)}
+                  >
+                    <div data-slot="ask-user-chip-content">
+                      <span data-slot="ask-user-chip-label">{option.label}</span>
+                      <Show when={option.description}>
+                        <span data-slot="ask-user-chip-description">{option.description}</span>
+                      </Show>
+                    </div>
+                  </button>
+                )}
+              </For>
 
-      {/* Footer with nav and submit */}
-      <div data-slot="ask-user-footer">
-        <Show when={hasMultipleQuestions()}>
-          <div data-slot="ask-user-nav">
-            <button
-              type="button"
-              data-slot="ask-user-nav-btn"
-              data-direction="prev"
-              onClick={goToPrev}
-              disabled={isBusy() || currentIndex() === 0}
-            >
-              <Icon name="chevron-right" size="small" />
-            </button>
-            <span data-slot="ask-user-nav-indicator">
-              {currentIndex() + 1} / {questions().length}
-            </span>
-            <button
-              type="button"
-              data-slot="ask-user-nav-btn"
-              onClick={goToNext}
-              disabled={isBusy() || currentIndex() === questions().length - 1}
-            >
-              <Icon name="chevron-right" size="small" />
-            </button>
+              {/* Other option with custom input */}
+              <Show when={currentQuestion().allowOther !== false}>
+                <div data-slot="ask-user-other-container">
+                  <button
+                    type="button"
+                    data-component="ask-user-chip"
+                    data-selected={isOtherSelected(currentIndex())}
+                    data-disabled={isSubmitting()}
+                    onClick={() => toggleOther(currentIndex(), currentQuestion().multiSelect)}
+                  >
+                    <div data-slot="ask-user-chip-content">
+                      <span data-slot="ask-user-chip-label">Other</span>
+                      <span data-slot="ask-user-chip-description">Provide custom response</span>
+                    </div>
+                  </button>
+
+                  <Show when={isOtherSelected(currentIndex())}>
+                    <input
+                      type="text"
+                      data-slot="ask-user-custom-input"
+                      placeholder="Enter your response..."
+                      value={getCustomInput(currentIndex())}
+                      onInput={(e) => updateCustomInput(currentIndex(), e.currentTarget.value)}
+                      disabled={isBusy()}
+                    />
+                  </Show>
+                </div>
+              </Show>
+            </div>
           </div>
         </Show>
-        <Show when={canDismiss()}>
+
+        {/* Footer with nav and submit */}
+        <div data-slot="ask-user-footer">
+          <Show when={hasMultipleQuestions()}>
+            <div data-slot="ask-user-nav">
+              <button
+                type="button"
+                data-slot="ask-user-nav-btn"
+                data-direction="prev"
+                onClick={goToPrev}
+                disabled={isBusy() || currentIndex() === 0}
+              >
+                <Icon name="chevron-right" size="small" />
+              </button>
+              <span data-slot="ask-user-nav-indicator">
+                {currentIndex() + 1} / {questions().length}
+              </span>
+              <button
+                type="button"
+                data-slot="ask-user-nav-btn"
+                onClick={goToNext}
+                disabled={isBusy() || currentIndex() === questions().length - 1}
+              >
+                <Icon name="chevron-right" size="small" />
+              </button>
+            </div>
+          </Show>
+          <Show when={canDismiss()}>
+            <button
+              type="button"
+              data-slot="ask-user-dismiss-btn"
+              data-submitting={isRejecting()}
+              onClick={handleReject}
+              disabled={isBusy()}
+            >
+              <Show when={isRejecting()}>
+                <Spinner />
+              </Show>
+              {isRejecting() ? "Dismissing..." : "Dismiss"}
+            </button>
+          </Show>
           <button
             type="button"
-            data-slot="ask-user-dismiss-btn"
-            data-submitting={isRejecting()}
-            onClick={handleReject}
-            disabled={isBusy()}
+            data-slot="ask-user-submit-btn"
+            data-ready={hasSelections()}
+            data-submitting={isSubmitting()}
+            onClick={handleSubmit}
+            disabled={isBusy() || !hasSelections()}
           >
-            <Show when={isRejecting()}>
+            <Show when={isSubmitting()}>
               <Spinner />
             </Show>
-            {isRejecting() ? "Dismissing..." : "Dismiss"}
+            {isSubmitting() ? "Submitting..." : "Submit"}
           </button>
-        </Show>
-        <button
-          type="button"
-          data-slot="ask-user-submit-btn"
-          data-ready={hasSelections()}
-          data-submitting={isSubmitting()}
-          onClick={handleSubmit}
-          disabled={isBusy() || !hasSelections()}
-        >
-          <Show when={isSubmitting()}>
-            <Spinner />
-          </Show>
-          {isSubmitting() ? "Submitting..." : "Submit"}
-        </button>
+        </div>
       </div>
-    </div>
+    </Show>
   )
 }

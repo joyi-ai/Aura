@@ -55,6 +55,8 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   let snapTargetIdValue: string | undefined
   let resizeInProgress = false
   let wasAtBottom = true // Track if user was at bottom (for resize restoration)
+  let resizeAnchorTop = 0
+  let hasResizeAnchor = false
   let resizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
   const lastMessageId = { value: "" }
   const lastMessageIdAtSnap = { value: "" }
@@ -260,6 +262,7 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     scrollEl = el
 
     if (el) {
+      wasAtBottom = isNearBottom()
       el.addEventListener("wheel", handleWheel, { passive: true })
       // Watch for DOM changes to detect new messages
       mutationObserver = new MutationObserver(handleMutation)
@@ -275,6 +278,14 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       containerResizeObserver = new ResizeObserver((entries) => {
         const entry = entries[0]
         if (!entry) return
+        if (!scrollEl) return
+
+        // Capture the pre-resize scroll anchor once, then restore after drag settles.
+        if (!resizeInProgress) {
+          wasAtBottom = isNearBottom()
+          resizeAnchorTop = Math.max(0, scrollEl.scrollTop)
+          hasResizeAnchor = true
+        }
 
         // Mark resize in progress to ignore scroll events
         resizeInProgress = true
@@ -284,10 +295,25 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
         clearTimeout(resizeDebounceTimer)
         resizeDebounceTimer = setTimeout(() => {
           resizeInProgress = false
-          // Restore to bottom if user was at bottom before resize started
-          if (wasAtBottom && scrollEl) {
-            scrollEl.scrollTop = scrollEl.scrollHeight
+          if (!scrollEl) {
+            hasResizeAnchor = false
+            return
           }
+
+          // Restore to bottom if user was at bottom before resize started.
+          if (wasAtBottom) {
+            scrollEl.scrollTop = scrollEl.scrollHeight
+            hasResizeAnchor = false
+            return
+          }
+
+          // Otherwise keep the same scroll anchor to avoid jump-to-top during resize.
+          if (hasResizeAnchor) {
+            const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
+            const nextTop = Math.min(Math.max(resizeAnchorTop, 0), maxTop)
+            scrollEl.scrollTop = nextTop
+          }
+          hasResizeAnchor = false
         }, RESIZE_DEBOUNCE_MS)
       })
       containerResizeObserver.observe(el)
