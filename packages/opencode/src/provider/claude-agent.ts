@@ -32,6 +32,14 @@ export namespace ClaudeAgent {
     interleaved: true,
   }
 
+  // Effort variant definitions for Claude Code models
+  // Maps to maxThinkingTokens since the Agent SDK doesn't support effort natively yet
+  const EFFORT_VARIANTS: Record<string, Record<string, any>> = {
+    low: { effort: "low" },
+    medium: { effort: "medium" },
+    high: { effort: "high" },
+  }
+
   // Opus model - best for complex reasoning
   export const MODEL_OPUS: Provider.Model = {
     id: "opus",
@@ -41,12 +49,12 @@ export namespace ClaudeAgent {
     api: { id: "opus", url: "", npm: "" },
     capabilities: BASE_CAPABILITIES,
     cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-    limit: { context: 200000, output: 16000 },
+    limit: { context: 200000, output: 128000 },
     status: "active",
     options: {},
     headers: {},
-    release_date: "2025-02-24",
-    variants: {},
+    release_date: "2026-02-05",
+    variants: EFFORT_VARIANTS,
   }
 
   // Sonnet model - balanced for daily coding (default)
@@ -63,7 +71,7 @@ export namespace ClaudeAgent {
     options: {},
     headers: {},
     release_date: "2025-09-29",
-    variants: {},
+    variants: EFFORT_VARIANTS,
   }
 
   // Haiku model - fast for simple tasks
@@ -80,7 +88,7 @@ export namespace ClaudeAgent {
     options: {},
     headers: {},
     release_date: "2025-10-01",
-    variants: {},
+    variants: EFFORT_VARIANTS,
   }
 
   // Default model (uses Opus - best for complex reasoning)
@@ -92,12 +100,12 @@ export namespace ClaudeAgent {
     api: { id: "default", url: "", npm: "" },
     capabilities: BASE_CAPABILITIES,
     cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-    limit: { context: 200000, output: 16000 },
+    limit: { context: 200000, output: 128000 },
     status: "active",
     options: {},
     headers: {},
-    release_date: "2025-12-01",
-    variants: {},
+    release_date: "2026-02-05",
+    variants: EFFORT_VARIANTS,
   }
 
   // Legacy model for backward compatibility

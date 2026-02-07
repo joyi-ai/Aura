@@ -331,4 +331,33 @@
     border-color: var(--border-base);
     color: var(--text-weak);
   }
+
+  /* Completed state */
+  [data-component="ask-user-question"][data-completed="true"] {
+    opacity: 0.85;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  [data-slot="ask-user-completed-item"] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  [data-slot="ask-user-completed-answer"] {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: var(--font-size-13);
+    color: var(--text-base);
+    font-weight: 500;
+  }
+
+  [data-slot="ask-user-completed-answer"] [data-component="icon"] {
+    width: 14px;
+    height: 14px;
+    color: var(--color-green);
+    flex-shrink: 0;
+  }
 }

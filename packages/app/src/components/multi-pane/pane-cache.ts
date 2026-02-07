@@ -6,7 +6,6 @@ export type PaneCache = {
   model?: { providerID: string; modelID: string }
   variant?: string | null
   modeId?: string
-  thinking?: boolean
 }
 
 export const paneCache = new Map<string, PaneCache>()

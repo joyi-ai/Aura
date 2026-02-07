@@ -98,13 +98,11 @@ export function useMessageActions() {
       model: message.model,
       variant: message.variant,
       system: message.system,
-      thinking: message.thinking,
       claudeCodeFlow: message.claudeCodeFlow,
     })
     if (message.agent) local.agent.set(message.agent)
     if (message.model) local.model.set(message.model)
     local.model.variant.set(message.variant)
-    if (message.thinking !== undefined) local.model.thinking.set(message.thinking)
   }
 
   const retryMessage = async (message: Message) => {
@@ -154,31 +152,54 @@ export function useMessageActions() {
       agent: message.agent,
       model: message.model,
     })
-    sdk.client.session
-      .prompt({
-        sessionID: message.sessionID,
-        agent: message.agent,
-        model: message.model,
-        messageID,
-        parts: promptParts,
-        variant: message.variant,
-        system: message.system,
-        thinking: message.thinking,
-        claudeCodeFlow: message.claudeCodeFlow,
-        mode: modePayload(),
-      })
-      .then((response) => {
-        const data = response.data
-        if (!data) return
-        sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
-      })
-      .catch((e) => {
-        showToast({
-          variant: "error",
-          title: "Failed to retry message",
-          description: e.message ?? "Please try again.",
+    if (message.claudeCodeFlow) {
+      sdk.client.session
+        .promptAsync({
+          sessionID: message.sessionID,
+          agent: message.agent,
+          model: message.model,
+          messageID,
+          parts: promptParts,
+          variant: message.variant,
+          system: message.system,
+          thinking: message.thinking,
+          claudeCodeFlow: message.claudeCodeFlow,
+          mode: modePayload(),
         })
-      })
+        .catch((e) => {
+          showToast({
+            variant: "error",
+            title: "Failed to retry message",
+            description: e.message ?? "Please try again.",
+          })
+        })
+    } else {
+      sdk.client.session
+        .prompt({
+          sessionID: message.sessionID,
+          agent: message.agent,
+          model: message.model,
+          messageID,
+          parts: promptParts,
+          variant: message.variant,
+          system: message.system,
+          thinking: message.thinking,
+          claudeCodeFlow: message.claudeCodeFlow,
+          mode: modePayload(),
+        })
+        .then((response) => {
+          const data = response.data
+          if (!data) return
+          sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
+        })
+        .catch((e) => {
+          showToast({
+            variant: "error",
+            title: "Failed to retry message",
+            description: e.message ?? "Please try again.",
+          })
+        })
+    }
   }
 
   const restoreCheckpoint = async (message: Message) => {

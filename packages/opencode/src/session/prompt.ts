@@ -713,8 +713,16 @@ export namespace SessionPrompt {
         }
 
         try {
-          // Default to 10000 thinking tokens if enabled (or not explicitly disabled)
-          const thinkingEnabled = lastUser.thinking !== false
+          // Map effort variant to maxThinkingTokens for the Agent SDK
+          const effortToThinkingTokens: Record<string, number> = {
+            low: 4000,
+            medium: 10000,
+            high: 16000,
+          }
+          const variant = lastUser.variant
+          const maxThinkingTokens = variant
+            ? effortToThinkingTokens[variant] ?? 10000
+            : 10000
           const result = await ClaudeAgentProcessor.process({
             sessionID,
             assistantMessage,
@@ -724,7 +732,7 @@ export namespace SessionPrompt {
             abort,
             modelID: model.id,
             providerID: model.providerID,
-            maxThinkingTokens: thinkingEnabled ? 10000 : undefined,
+            maxThinkingTokens,
           })
 
           // Update assistant message with result

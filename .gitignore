@@ -30,3 +30,8 @@ logs/
 .env.local
 *.md
 *.bun-build
+
+# Generated artifacts
+coverage/
+packages/opencode/coverage/
+packages/app/public/noise-texture.png

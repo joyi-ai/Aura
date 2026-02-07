@@ -100,7 +100,6 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         model: cached.model,
         variant: cached.variant,
         modeId: cached.modeId,
-        thinking: cached.thinking,
       })
     }
 

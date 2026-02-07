@@ -75,7 +75,56 @@ export namespace ModelsDev {
 
   export type Provider = z.infer<typeof Provider>
 
-  const CODEX_DEFAULT_MODEL = "gpt-5.2-codex"
+  const CODEX_DEFAULT_MODEL = "gpt-5.3-codex"
+  const CODEX_MODEL_53: Model = {
+    id: "gpt-5.3-codex",
+    name: "GPT-5.3 Codex",
+    family: "codex",
+    release_date: "2026-02-05",
+    attachment: true,
+    reasoning: true,
+    temperature: false,
+    tool_call: true,
+    limit: {
+      context: 400000,
+      output: 128000,
+    },
+    modalities: {
+      input: ["text", "image"],
+      output: ["text"],
+    },
+    variants: {
+      low: { reasoningEffort: "low" },
+      medium: { reasoningEffort: "medium" },
+      high: { reasoningEffort: "high" },
+      xhigh: { reasoningEffort: "xhigh" },
+    },
+    options: {},
+  }
+  const CODEX_MODEL_52: Model = {
+    id: "gpt-5.2-codex",
+    name: "GPT-5.2 Codex",
+    family: "codex",
+    release_date: "2025-01-01",
+    attachment: true,
+    reasoning: true,
+    temperature: false,
+    tool_call: true,
+    limit: {
+      context: 200000,
+      output: 16000,
+    },
+    modalities: {
+      input: ["text", "image", "pdf"],
+      output: ["text"],
+    },
+    variants: {
+      low: { reasoningEffort: "low" },
+      medium: { reasoningEffort: "medium" },
+      high: { reasoningEffort: "high" },
+    },
+    options: {},
+  }
   const CODEX_PROVIDER: Provider = {
     id: "codex",
     name: "Codex",
@@ -83,39 +132,30 @@ export namespace ModelsDev {
     env: [],
     npm: "@ai-sdk/openai-compatible",
     models: {
-      [CODEX_DEFAULT_MODEL]: {
-        id: CODEX_DEFAULT_MODEL,
-        name: "GPT-5.2 Codex",
-        family: "codex",
-        release_date: "2025-01-01",
-        attachment: true,
-        reasoning: true,
-        temperature: false,
-        tool_call: true,
-        limit: {
-          context: 200000,
-          output: 16000,
-        },
-        modalities: {
-          input: ["text", "image", "pdf"],
-          output: ["text"],
-        },
-        variants: {
-          low: { reasoningEffort: "low" },
-          medium: { reasoningEffort: "medium" },
-          high: { reasoningEffort: "high" },
-        },
-        options: {},
-      },
+      [CODEX_MODEL_53.id]: CODEX_MODEL_53,
+      [CODEX_MODEL_52.id]: CODEX_MODEL_52,
     },
   }
 
-  function withCodex(input: Record<string, Provider>) {
-    if (input["codex"]) return input
+  function withCodex(input: Record<string, Provider>): Record<string, Provider> {
+    if (input["codex"]) {
+      const codex = input["codex"]
+      return {
+        ...input,
+        codex: {
+          ...codex,
+          models: {
+            ...codex.models,
+            "gpt-5.3-codex": codex.models["gpt-5.3-codex"] ?? CODEX_MODEL_53,
+            "gpt-5.2-codex": codex.models["gpt-5.2-codex"] ?? CODEX_MODEL_52,
+          },
+        },
+      } as Record<string, Provider>
+    }
     return {
       ...input,
       codex: CODEX_PROVIDER,
-    }
+    } as Record<string, Provider>
   }
 
   export async function get() {

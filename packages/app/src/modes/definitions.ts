@@ -24,7 +24,7 @@ export const BUILTIN_MODES: ModeDefinition[] = [
     color: "#10A37F",
     providerOverride: "codex",
     defaultAgent: "build",
-    defaultModel: "gpt-5.2-codex",
+    defaultModel: "gpt-5.3-codex",
     defaultVariant: "xhigh",
     allowedAgents: ["build", "plan"],
     builtin: true,

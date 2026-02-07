@@ -4,6 +4,7 @@ import type { ProcessContext } from "./index"
 import { AskUserQuestion } from "../ask-user-question"
 import { PlanMode } from "../plan-mode"
 import { Identifier } from "@/id/id"
+import { Instance } from "@/project/instance"
 import { Log } from "@/util/log"
 import { Todo } from "../todo"
 import path from "path"
@@ -38,7 +39,16 @@ export namespace ClaudeAgentPermission {
    * Create a canUseTool callback that handles AskUserQuestion specially
    */
   export function createCanUseTool(ctx: ProcessContext): CanUseTool {
+    // Capture directory while in Instance context. The SDK calls this callback
+    // from its transport's async context where AsyncLocalStorage may be lost,
+    // which causes Bus.publish (via Instance.directory) to silently fail and
+    // prevents AskUserQuestion/ExitPlanMode events from reaching the frontend.
+    const directory = Instance.directory
+
     return async (toolName, input, options): Promise<PermissionResult> => {
+      return Instance.provide({
+        directory,
+        fn: async () => {
       // Handle AskUserQuestion specially - wait for user response
       if (toolName === "AskUserQuestion") {
         const askInput = input as {
@@ -192,6 +202,8 @@ export namespace ClaudeAgentPermission {
         behavior: "allow",
         updatedInput: input,
       }
+        },
+      })
     }
   }
 }

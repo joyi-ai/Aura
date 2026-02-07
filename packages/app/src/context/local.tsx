@@ -648,8 +648,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (savedModel) model.set(savedModel)
           const savedVariant = saved?.variant
           if (savedVariant !== undefined) model.variant.set(savedVariant === null ? undefined : savedVariant)
-          const savedThinking = saved?.thinking
-          if (savedThinking !== undefined) model.thinking.set(savedThinking)
         },
         { defer: true },
       ),

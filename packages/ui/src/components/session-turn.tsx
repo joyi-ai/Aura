@@ -182,21 +182,31 @@ function StepsContainer(props: {
   const [prevLength, setPrevLength] = createSignal(0)
 
   // Track when new tools are added and trigger animation
+  let animationTimeout: ReturnType<typeof setTimeout> | undefined
+  let animationRAF: number | undefined
 
   createEffect(() => {
     const currentLength = props.toolParts.length
-
     const prev = prevLength()
 
     if (currentLength > prev && prev > 0) {
-      setAnimatingIndex(currentLength - 1)
+      if (animationTimeout) clearTimeout(animationTimeout)
+      if (animationRAF) cancelAnimationFrame(animationRAF)
 
-      const timeout = setTimeout(() => setAnimatingIndex(null), 300)
-
-      onCleanup(() => clearTimeout(timeout))
+      // Clear then re-apply to force CSS animation restart
+      setAnimatingIndex(null)
+      animationRAF = requestAnimationFrame(() => {
+        setAnimatingIndex(currentLength - 1)
+        animationTimeout = setTimeout(() => setAnimatingIndex(null), 300)
+      })
     }
 
     setPrevLength(currentLength)
+  })
+
+  onCleanup(() => {
+    if (animationTimeout) clearTimeout(animationTimeout)
+    if (animationRAF) cancelAnimationFrame(animationRAF)
   })
 
   // Get visible tools based on expanded state
@@ -338,6 +348,21 @@ export function SessionTurn(
     return msg
   })
 
+  const copyAssistantText = () => {
+    const msgs = assistantMessages()
+    const parts: string[] = []
+    for (const m of msgs) {
+      const msgParts = data.store.part[m.id] ?? emptyParts
+      for (const p of msgParts) {
+        if (p?.type === "text" && (p as TextPart).text) {
+          parts.push((p as TextPart).text)
+        }
+      }
+    }
+    const text = parts.join("\n\n")
+    if (text) navigator.clipboard.writeText(text)
+  }
+
   const messageActions = createMemo<MessageActionHandlers | undefined>(() => {
     const msg = message()
 
@@ -356,6 +381,8 @@ export function SessionTurn(
     if (!onEdit && !onRestore && !onRetry && !onDelete) return undefined
 
     return {
+      onCopy: copyAssistantText,
+
       onEdit: onEdit ? () => onEdit(msg) : undefined,
 
       onRestore: onRestore ? () => onRestore(msg) : undefined,
@@ -735,20 +762,35 @@ export function SessionTurn(
   createEffect(
     on(reasoningPartId, (id) => {
       if (prevReasoningId && id && prevReasoningId !== id) {
-        setReasoningAnimating(true)
-        setTimeout(() => setReasoningAnimating(false), 300)
+        // Only blur-transition when not actively streaming
+        if (!reasoningStreaming()) {
+          setReasoningAnimating(true)
+          setTimeout(() => setReasoningAnimating(false), 300)
+        }
       }
       prevReasoningId = id
     }),
   )
 
+  let reasoningScrollRAF: number | undefined
   createEffect(
     on(reasoning, () => {
-      const el = store.reasoningRef
-      if (!el) return
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+      // Coalesce rapid updates into one scroll per frame to prevent jumpiness
+      if (reasoningScrollRAF) cancelAnimationFrame(reasoningScrollRAF)
+      reasoningScrollRAF = requestAnimationFrame(() => {
+        reasoningScrollRAF = undefined
+        const el = store.reasoningRef
+        if (!el) return
+        // Bypass CSS scroll-behavior: smooth during streaming to avoid conflicting animations
+        el.style.scrollBehavior = "auto"
+        el.scrollTop = el.scrollHeight
+        el.style.scrollBehavior = ""
+      })
     }),
   )
+  onCleanup(() => {
+    if (reasoningScrollRAF) cancelAnimationFrame(reasoningScrollRAF)
+  })
 
   const reasoningMissing = createMemo(() => hasReasoning() && !reasoning())
 
@@ -1427,6 +1469,7 @@ export function SessionTurn(
 
                         <div data-component="message-actions-row">
                           <MessageActions
+                            onCopy={messageActions()?.onCopy}
                             onEdit={messageActions()?.onEdit}
                             onRestore={messageActions()?.onRestore}
                             onRetry={messageActions()?.onRetry}

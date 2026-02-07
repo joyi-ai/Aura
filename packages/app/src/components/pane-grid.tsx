@@ -383,13 +383,17 @@ export function PaneGrid(props: PaneGridProps) {
 
         // Skip if no significant change
         if (moveX < 1 && moveY < 1 && widthDelta < 1 && heightDelta < 1) {
-          if (!paneAnimations.get(id)) restorePaneBody(id)
+          if (!paneAnimations.get(id)) {
+            restorePaneBody(id)
+            restoreScroll(id)
+          }
           continue
         }
 
         paneAnimations.get(id)?.cancel()
         paneAnimations.delete(id)
 
+        captureScroll(id, body)
         overlayRef.appendChild(body)
 
         body.style.position = "absolute"
@@ -417,6 +421,7 @@ export function PaneGrid(props: PaneGridProps) {
             if (disposed) return
             if (paneAnimations.get(id) !== anim) return
             restorePaneBody(id)
+            restoreScroll(id)
             paneAnimations.delete(id)
           },
           () => {},
@@ -525,8 +530,10 @@ export function PaneGrid(props: PaneGridProps) {
 
     document.body.style.userSelect = "none"
     document.body.style.cursor = type === "col" ? "col-resize" : "row-resize"
+    let resizeFrame = 0
+    let pendingMove: MouseEvent | undefined
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    const applyResize = (moveEvent: MouseEvent) => {
       if (!containerRef) return
 
       const rect = containerRef.getBoundingClientRect()
@@ -546,9 +553,22 @@ export function PaneGrid(props: PaneGridProps) {
       setRowSizes(newSizes)
     }
 
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      pendingMove = moveEvent
+      if (resizeFrame) return
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0
+        const nextMove = pendingMove
+        pendingMove = undefined
+        if (!nextMove) return
+        applyResize(nextMove)
+      })
+    }
+
     const cleanup = () => {
       document.body.style.userSelect = ""
       document.body.style.cursor = ""
+      if (resizeFrame) cancelAnimationFrame(resizeFrame)
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
       const page = multiPane.currentPage()
@@ -593,8 +613,10 @@ export function PaneGrid(props: PaneGridProps) {
 
     document.body.style.userSelect = "none"
     document.body.style.cursor = "nwse-resize"
+    let resizeFrame = 0
+    let pendingMove: MouseEvent | undefined
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    const applyResize = (moveEvent: MouseEvent) => {
       if (!containerRef) return
 
       const rect = containerRef.getBoundingClientRect()
@@ -611,9 +633,22 @@ export function PaneGrid(props: PaneGridProps) {
       setRowSizes(newRows)
     }
 
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      pendingMove = moveEvent
+      if (resizeFrame) return
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0
+        const nextMove = pendingMove
+        pendingMove = undefined
+        if (!nextMove) return
+        applyResize(nextMove)
+      })
+    }
+
     const cleanup = () => {
       document.body.style.userSelect = ""
       document.body.style.cursor = ""
+      if (resizeFrame) cancelAnimationFrame(resizeFrame)
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
       const page = multiPane.currentPage()
@@ -741,7 +776,7 @@ export function PaneGrid(props: PaneGridProps) {
                 ref={(el) => paneRefs.set(pane.id, el)}
                 class="relative min-w-0 min-h-0 overflow-hidden"
                 classList={{ "pointer-events-none": hidden() }}
-                style={paneWrapperStyle(pane.id, index())}
+                style={{ ...paneWrapperStyle(pane.id, index()), contain: "strict" }}
               >
                 <div
                   ref={(el) => paneBodyRefs.set(pane.id, el)}
@@ -749,6 +784,7 @@ export function PaneGrid(props: PaneGridProps) {
                   style={{
                     opacity: hidden() ? 0 : 1,
                     transform: hidden() ? "scale(0.98)" : "scale(1)",
+                    contain: "layout style",
                   }}
                 >
                   {props.renderPane(pane)}

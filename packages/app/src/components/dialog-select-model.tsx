@@ -1,6 +1,6 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js"
-import { useLocal, type LocalModel } from "@/context/local"
+import { useLocal } from "@/context/local"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@opencode-ai/ui/button"
@@ -8,7 +8,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
-import { Switch } from "@opencode-ai/ui/switch"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogManageModels } from "./dialog-manage-models"
@@ -207,8 +206,10 @@ export const ModelSelectorPopover: Component<{
 }> = (props) => {
   const [open, setOpen] = createSignal(false)
   const local = useLocal()
-  const isClaudeCodeMode = createMemo(() => local.mode.current()?.id === "claude-code")
   const language = useLanguage()
+  const variants = createMemo(() => local.model.variant.list())
+  const currentVariant = createMemo(() => local.model.variant.current())
+  const hasVariants = createMemo(() => variants().length > 0)
 
   return (
     <Kobalte open={open()} onOpenChange={setOpen} placement="top-start" gutter={8}>
@@ -219,16 +220,26 @@ export const ModelSelectorPopover: Component<{
           <div class="h-72 flex flex-col">
             <ModelList provider={props.provider} onSelect={() => setOpen(false)} class="p-1" />
           </div>
-          <Show when={isClaudeCodeMode()}>
-            <div class="px-3 py-2.5 border-t border-border-base flex items-center justify-between">
-              <div class="flex flex-col">
-                <span class="text-13-medium text-text-base">Extended Thinking</span>
-                <span class="text-11-regular text-text-weak">Deeper reasoning</span>
+          <Show when={hasVariants()}>
+            <div class="px-3 py-2.5 border-t border-border-base flex flex-col gap-1">
+              <span class="text-11-regular text-text-subtle uppercase tracking-wider">Thinking Effort</span>
+              <div class="flex gap-1">
+                <For each={variants()}>
+                  {(variant) => (
+                    <button
+                      type="button"
+                      class="px-2 py-1 rounded text-12-regular capitalize hover:bg-surface-raised-base-hover"
+                      classList={{
+                        "bg-surface-interactive-base text-text-interactive-base": currentVariant() === variant,
+                        "text-text-strong": currentVariant() !== variant,
+                      }}
+                      onClick={() => local.model.variant.set(variant)}
+                    >
+                      {variant}
+                    </button>
+                  )}
+                </For>
               </div>
-              <Switch
-                checked={local.model.thinking.current()}
-                onChange={(checked) => local.model.thinking.set(checked)}
-              />
             </div>
           </Show>
         </Kobalte.Content>
@@ -305,13 +316,28 @@ export const DialogSelectModel: Component<{ provider?: string }> = (props) => {
     return (
       <Dialog title={language.t("dialog.model.select.title")} description="Claude Code models">
         <ModelList provider={props.provider} onSelect={() => dialog.close()} />
-        <div class="px-3 py-3 border-t border-border-base flex items-center justify-between">
-          <div class="flex flex-col">
-            <span class="text-13-medium text-text-base">Extended Thinking</span>
-            <span class="text-12-regular text-text-weak">Enable deeper reasoning</span>
+        <Show when={hasVariants()}>
+          <div class="px-3 py-3 border-t border-border-base flex flex-col gap-1">
+            <span class="text-11-regular text-text-subtle uppercase tracking-wider">Thinking Effort</span>
+            <div class="flex gap-1">
+              <For each={variants()}>
+                {(variant) => (
+                  <button
+                    type="button"
+                    class="px-2 py-1 rounded text-12-regular capitalize hover:bg-surface-raised-base-hover"
+                    classList={{
+                      "bg-surface-interactive-base text-text-interactive-base": currentVariant() === variant,
+                      "text-text-strong": currentVariant() !== variant,
+                    }}
+                    onClick={() => local.model.variant.set(variant)}
+                  >
+                    {variant}
+                  </button>
+                )}
+              </For>
+            </div>
           </div>
-          <Switch checked={local.model.thinking.current()} onChange={(checked) => local.model.thinking.set(checked)} />
-        </div>
+        </Show>
       </Dialog>
     )
   }
